@@ -21,14 +21,16 @@ struct State
 	const model::Move&   m_move;
 
 	bool m_isEnemyAround;
-	bool m_isUnderMissile;
 	bool m_isLowHP;
+
+	const model::Projectile* m_attackingProjectile;
 
 	std::array<int, model::_ACTION_COUNT_> m_cooldownTicks;
 
 	State(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move);
 
 	bool isReadyForAction(model::ActionType action) const              { return m_cooldownTicks[action] == 0; }
+	bool isUnderMissile() const                                         { return m_attackingProjectile != nullptr;  }
 
 	static const double LOW_HP_FACTOR;
 };

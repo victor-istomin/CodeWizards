@@ -11,7 +11,7 @@
 #include <algorithm>
 #include <iterator>
 #include <limits>
-
+#include <cassert>
 
 using namespace model;
 using namespace std;
@@ -39,6 +39,22 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 		retreatTo(getPreviousWaypoint(), move);
 	}
 
+// 	// retreat also may be missile avoidance maneuver
+// 	// todo - looks impossible without bonus
+// 	if (m_state->isUnderMissile())
+// 	{
+// 		const Projectile* projectile = m_state->m_attackingProjectile;
+// 		assert(nullptr != projectile);
+// 
+// 		double distance = projectile->getDistanceTo(self);
+// 		double speed = std::hypot(self.getSpeedX() - projectile->getSpeedX(), self.getSpeedY() - projectile->getSpeedY());
+// 
+// 		int ticksToHit = std::floor(distance / speed);
+// 
+// 		//move.setSpeed(-10);
+// 	}
+
+
 	if (m_state->m_isEnemyAround && isRetreating)
 	{
 		// Постоянно двигаемся из-стороны в сторону, чтобы по нам было сложнее попасть.
@@ -59,7 +75,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 		double distance = self.getDistanceTo(*nearestTarget);
 
 		// ... и он в пределах досягаемости наших заклинаний, ...
-		if (distance <= self.getCastRange()) 
+		if (distance < self.getCastRange())
 		{
 			double angle = self.getAngleTo(*nearestTarget);
 
@@ -390,7 +406,7 @@ MyStrategy::MyStrategy()
 State::State(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move) 
 	: m_self(self), m_world(world), m_game(game), m_move(move)
 	, m_isEnemyAround(false)
-	, m_isUnderMissile(false)
+	, m_attackingProjectile(nullptr)
 	, m_isLowHP(false)
 	, m_cooldownTicks()
 {
@@ -413,15 +429,15 @@ State::State(const model::Wizard& self, const model::World& world, const model::
 
 	const auto& projectiles = m_world.getProjectiles();
 	auto itProjectile = std::find_if(std::begin(projectiles), std::end(projectiles),
-		[&selfPoint, &self](const model::Projectile& projectile)
+		[&selfPoint, &self, &game](const model::Projectile& projectile)
 	{
 		Vec2d projectileSpeed   = Vec2d(projectile.getSpeedX(), projectile.getSpeedY());
 		LineEquation firingLine = LineEquation::fromDirectionVector(projectile, projectileSpeed);
 
-		if (firingLine.isContains(selfPoint))
-		{
-			return true;   // hit just into center
-		}
+// 		if (firingLine.isContains(selfPoint))
+// 		{
+// 			return true;   // hit just into center
+// 		}
 
 		double collitionRadius = self.getRadius() + projectile.getRadius();
 
@@ -429,6 +445,18 @@ State::State(const model::Wizard& self, const model::World& world, const model::
 		// compute the direction vector D from A to B
 		Vec2d D = projectileSpeed;
 		D.normalize();
+		Point2D projectilePoint = projectile;
+		double projectileDistance = selfPoint.getDistanceTo(projectilePoint);
+		bool isIncoming = projectileDistance > selfPoint.getDistanceTo((D + Vec2d::fromPoint(projectilePoint)).toPoint());
+		if (!isIncoming)
+			return false;
+
+		// TODO - improve max distance calculation
+		const double maxProjectileDistance = projectile.getRadius() + self.getRadius() + 
+			(projectile.getType() == model::PROJECTILE_DART ? game.getFetishBlowdartAttackRange() : game.getWizardCastRange());
+
+		if (projectileDistance > maxProjectileDistance)
+			return false;
 
 		// TODO - it looks like this code doesn't care on projectile flying direction and distance
 		// however, this may be somehow used to prevent staying on firing line like: me -> teammate's back -> enemy
@@ -437,7 +465,6 @@ State::State(const model::Wizard& self, const model::World& world, const model::
 		// where D is destination vector, A is a starting point, C is a circle center
 
 		// compute the value t of the closest point to the circle center (Cx, Cy)
-		Point2D projectilePoint = projectile;
 		double t = D.m_x*(selfPoint.m_x - projectilePoint.m_x) + D.m_y*(selfPoint.m_y - projectilePoint.m_y);
 
 		// This is the projection of C on the line from A to B.
@@ -455,7 +482,6 @@ State::State(const model::Wizard& self, const model::World& world, const model::
 
 			// compute first intersection point
 			Point2D F = Point2D((t - dt)*D.m_x + projectilePoint.m_x, (t - dt)*D.m_y + projectilePoint.m_y);
-			double test = F.getDistanceTo(selfPoint);
 
 				// compute second intersection point
 				// Gx = (t + dt)*Dx + Ax
@@ -468,7 +494,7 @@ State::State(const model::Wizard& self, const model::World& world, const model::
 	if (itProjectile != std::end(projectiles))
 	{
 		// fire in the hall!
-		m_isUnderMissile = true;
+		m_attackingProjectile = &(*itProjectile);
 	}
 
 
