@@ -59,7 +59,7 @@ const vector<Tree>& World::getTrees() const {
 }
 
 Player World::getMyPlayer() const {
-    for (size_t playerIndex = players.size() - 1; playerIndex >= 0; --playerIndex) {
+    for (int playerIndex = players.size() - 1; playerIndex >= 0; --playerIndex) {
         Player player = players[playerIndex];
         if (player.isMe()) {
             return player;
