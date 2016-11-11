@@ -14,12 +14,12 @@ import java.util.Arrays;
  * привести к поражению дружественной фракции.
  */
 public class Message {
-    private final LaneType lane;
+    private final LineType line;
     private final SkillType skillToLearn;
     private final byte[] rawMessage;
 
-    public Message(LaneType lane, SkillType skillToLearn, byte[] rawMessage) {
-        this.lane = lane;
+    public Message(LineType line, SkillType skillToLearn, byte[] rawMessage) {
+        this.line = line;
         this.skillToLearn = skillToLearn;
         this.rawMessage = Arrays.copyOf(rawMessage, rawMessage.length);
     }
@@ -27,8 +27,8 @@ public class Message {
     /**
      * @return Возвращает указание контролировать определённую дорожку.
      */
-    public LaneType getLane() {
-        return lane;
+    public LineType getLine() {
+        return line;
     }
 
     /**

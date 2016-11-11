@@ -1,0 +1,3 @@
+[submodule "russian-ai-cup-visual"]
+	path = russian-ai-cup-visual
+	url = git@github.com:JustAMan/russian-ai-cup-visual.git

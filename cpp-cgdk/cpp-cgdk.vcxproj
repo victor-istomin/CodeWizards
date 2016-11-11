@@ -115,6 +115,7 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\russian-ai-cup-visual\clients\cpp\Debug.cpp" />
     <ClCompile Include="csimplesocket\ActiveSocket.cpp" />
     <ClCompile Include="csimplesocket\HTTPActiveSocket.cpp" />
     <ClCompile Include="csimplesocket\PassiveSocket.cpp" />
@@ -141,12 +142,14 @@
     <ClCompile Include="Strategy.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\russian-ai-cup-visual\clients\cpp\Debug.h" />
     <ClInclude Include="csimplesocket\ActiveSocket.h" />
     <ClInclude Include="csimplesocket\Host.h" />
     <ClInclude Include="csimplesocket\HTTPActiveSocket.h" />
     <ClInclude Include="csimplesocket\PassiveSocket.h" />
     <ClInclude Include="csimplesocket\SimpleSocket.h" />
     <ClInclude Include="csimplesocket\StatTimer.h" />
+    <ClInclude Include="DebugVisualizer.h" />
     <ClInclude Include="LineEquation.h" />
     <ClInclude Include="model\ActionType.h" />
     <ClInclude Include="model\Bonus.h" />

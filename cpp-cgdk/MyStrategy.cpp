@@ -385,7 +385,9 @@ void MyStrategy::retreatTo(const Point2D& point, model::Move& move)
 MyStrategy::MyStrategy()
 	: m_lastStrafeChangeTick(0)
 	, m_lastStrafe(0.0)
-{ }
+	, m_visualizer(make_unique<DebugVisualizer>())
+{
+}
 
 State::State(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move) 
 	: m_self(self), m_world(world), m_game(game), m_move(move)

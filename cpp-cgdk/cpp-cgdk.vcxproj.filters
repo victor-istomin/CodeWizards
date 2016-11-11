@@ -99,6 +99,9 @@
     <ClCompile Include="csimplesocket\SimpleSocket.cpp">
       <Filter>Source Files\csimplesocket</Filter>
     </ClCompile>
+    <ClCompile Include="..\russian-ai-cup-visual\clients\cpp\Debug.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="MyStrategy.h">
@@ -210,6 +213,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Vec.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\russian-ai-cup-visual\clients\cpp\Debug.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DebugVisualizer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

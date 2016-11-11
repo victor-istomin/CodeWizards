@@ -6,6 +6,7 @@
 #include "Strategy.h"
 #include "model/LaneType.h"
 #include "LineEquation.h"
+#include "DebugVisualizer.h"
 
 #include <memory>
 #include <vector>
@@ -40,6 +41,7 @@ class MyStrategy : public Strategy
 
 	typedef std::vector<Point2D> TWaypoints;
 
+	std::unique_ptr<DebugVisualizer> m_visualizer;
 	std::unique_ptr<State> m_state;
 	TWaypoints m_waypoints;
 	int m_lastStrafeChangeTick;

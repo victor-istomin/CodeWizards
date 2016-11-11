@@ -27,3 +27,9 @@
 *.exe
 *.out
 *.app
+
+# Project-specific
+cpp-cgdk/.vs
+cpp-cgdk/cpp-cgdk.VC*
+local-runner/plugins/*.class
+local-runner/plugins/model/*.class
