@@ -25,6 +25,7 @@ const double Point2D::k_epsilon = 0.0001;
 void MyStrategy::move(const Wizard& self, const World& world, const Game& game, Move& move) 
 {
 	initState(self, world, game, move);
+	DebugMessage debugMessage(*m_visualizer, self);
 
 	// TODO - remove dirty hack inside !!!
 	const LivingUnit* nearestTarget = getNearestTarget();
@@ -36,7 +37,9 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 	bool isRetreating = isTooCloseToEnemy || m_state->m_isLowHP;
 	if (isRetreating) 
 	{
-		retreatTo(getPreviousWaypoint(), move);
+		Point2D previousWaypoint = getPreviousWaypoint();
+		retreatTo(previousWaypoint, move);
+		debugMessage.setNextWaypoint(previousWaypoint);
 	}
 
 	if (m_state->m_isEnemyAround && isRetreating)
@@ -92,7 +95,9 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 	// Если нет других действий, просто продвигаемся вперёд.
 	if (move.getSpeed() == 0 && std::abs(move.getTurn() < PI/1000))
 	{
-		goTo(getNextWaypoint(), move);
+		Point2D nextWaypoint = getNextWaypoint();
+		goTo(nextWaypoint, move);
+		debugMessage.setNextWaypoint(nextWaypoint);
 	}
 }
 
