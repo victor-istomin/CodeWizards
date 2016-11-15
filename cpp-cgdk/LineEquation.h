@@ -12,7 +12,9 @@ struct Point2D
 
 	static const double k_epsilon;
 
-	bool operator!=(const Point2D& right) const { return std::abs(m_x - right.m_x) < k_epsilon && std::abs(m_y - right.m_y) < k_epsilon; }
+	// unused:
+	// bool operator==(const Point2D& right) const { return std::abs(m_x - right.m_x) < k_epsilon && std::abs(m_y - right.m_y) < k_epsilon; }
+	// bool operator!=(const Point2D& right) const { return !this->operator ==(right); }
 
 	Point2D(double x, double y) : m_x(x), m_y(y) {}
 	Point2D(const model::Unit& u) : Point2D(u.getX(), u.getY()) {}
