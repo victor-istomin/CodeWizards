@@ -111,8 +111,19 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 		if (!isRushTime && m_guardPoint->getDistanceTo(self) < WAYPOINT_RADIUS)
 			nextWaypoint = *m_guardPoint;
 
-		goTo(nextWaypoint, move);
-		debugMessage.setNextWaypoint(nextWaypoint);
+		if (nextWaypoint.getDistanceTo(self) > 1)
+		{
+			goTo(nextWaypoint, move);
+			debugMessage.setNextWaypoint(nextWaypoint);
+		}
+		else
+		{
+			nextWaypoint = getNextWaypoint(); 
+			double angle = m_state->m_self.getAngleTo(nextWaypoint.m_x, nextWaypoint.m_y);
+
+			// turn, but not move
+			move.setTurn(angle);
+		}
 	}
 }
 
