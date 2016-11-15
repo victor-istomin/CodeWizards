@@ -38,6 +38,9 @@ class MyStrategy : public Strategy
 {
 	static const double WAYPOINT_RADIUS;
 	static const int    STRAFE_CHANGE_INTERVAL = 4; // don't change strafe too ofter
+	static Point2D      TOP_GUARD_POINT;
+	static Point2D      MID_GUARD_POINT;
+	static Point2D      BOTTOM_GUARD_POINT;
 
 	typedef std::vector<Point2D> TWaypoints;
 
@@ -46,6 +49,7 @@ class MyStrategy : public Strategy
 	TWaypoints m_waypoints;
 	int m_lastStrafeChangeTick;
 	double m_lastStrafe;
+	Point2D* m_guardPoint;
 
 	void initialSetup();
 	void initState(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move);

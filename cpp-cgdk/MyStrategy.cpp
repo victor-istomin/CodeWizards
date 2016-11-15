@@ -17,6 +17,12 @@ using namespace model;
 using namespace std;
 
 const double MyStrategy::WAYPOINT_RADIUS = 100.0;
+
+Point2D MyStrategy::MID_GUARD_POINT    = Point2D(2000 - 400, 2000 + 200);
+Point2D MyStrategy::TOP_GUARD_POINT    = Point2D(35, 2000 - 400 + 35);
+Point2D MyStrategy::BOTTOM_GUARD_POINT = Point2D(2000 + 400 - 35, 4000 - 400 + 35);
+
+
 const double State::LOW_HP_FACTOR        = 0.3;
 
 const double Point2D::k_epsilon = 0.0001;
@@ -96,6 +102,15 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 	if (move.getSpeed() == 0 && std::abs(move.getTurn() < PI/1000))
 	{
 		Point2D nextWaypoint = getNextWaypoint();
+
+		// don't push too early
+		const int prepareTicks = m_state->m_game.getFactionMinionAppearanceIntervalTicks()
+			+ (m_guardPoint->getDistanceTo(MID_GUARD_POINT) < Point2D::k_epsilon ? 200 : 100);
+
+		bool isRushTime = (m_state->m_world.getTickIndex() > prepareTicks);
+		if (!isRushTime && m_guardPoint->getDistanceTo(self) < WAYPOINT_RADIUS)
+			nextWaypoint = *m_guardPoint;
+
 		goTo(nextWaypoint, move);
 		debugMessage.setNextWaypoint(nextWaypoint);
 	}
@@ -117,24 +132,28 @@ void MyStrategy::initialSetup()
 	srand(time(nullptr));
 
 	double mapSize = m_state->m_game.getMapSize();
+	double wizardSize = m_state->m_self.getRadius();
 
 	std::map<model::LaneType, TWaypoints> waypointsMap;
 
-	waypointsMap[LaneType::LANE_MIDDLE] = TWaypoints 
+	MyStrategy::MID_GUARD_POINT = Point2D(mapSize * 0.5 - 400, mapSize * 0.5 + 200);
+	waypointsMap[LaneType::LANE_MIDDLE] = TWaypoints
 	{ 
 		Point2D(100.0, mapSize - 100.0),
-		(rand() % 2 == 1 ? Point2D(600.0, mapSize - 200.0) : Point2D(600.0, mapSize - 200.0)),
+		Point2D(600.0, mapSize - 200.0),
 		Point2D(800.0, mapSize - 800.0),
+		MID_GUARD_POINT,
 		Point2D(mapSize - 600.0, 600.0),
 	};
 
+	MyStrategy::TOP_GUARD_POINT = Point2D(wizardSize, mapSize * 0.5 - 400 + wizardSize);
 	waypointsMap[LaneType::LANE_TOP] = TWaypoints 
 	{
 		Point2D(100.0, mapSize - 100.0),
 		Point2D(100.0, mapSize - 400.0),
 		Point2D(200.0, mapSize - 800.0),
-		Point2D(200.0, mapSize * 0.75),
-		Point2D(200.0, mapSize * 0.5),
+		Point2D(200.0, mapSize - 1200.0),
+		TOP_GUARD_POINT,
 		Point2D(200.0, mapSize * 0.25),
 		Point2D(200.0, 200.0),
 		Point2D(mapSize * 0.25, 200.0),
@@ -143,6 +162,7 @@ void MyStrategy::initialSetup()
 		Point2D(mapSize - 200.0, 200.0)
 	};
 
+	MyStrategy::BOTTOM_GUARD_POINT = Point2D(mapSize * 0.5 + 400 - wizardSize, mapSize - 350 + wizardSize);
 	waypointsMap[LaneType::LANE_BOTTOM] = TWaypoints
 	{
 		Point2D(100.0, mapSize - 100.0),
@@ -150,6 +170,7 @@ void MyStrategy::initialSetup()
 		Point2D(800.0, mapSize - 200.0),
 		Point2D(mapSize * 0.25, mapSize - 200.0),
 		Point2D(mapSize * 0.5, mapSize - 200.0),
+		BOTTOM_GUARD_POINT,
 		Point2D(mapSize * 0.75, mapSize - 200.0),
 		Point2D(mapSize - 200.0, mapSize - 200.0),
 		Point2D(mapSize - 200.0, mapSize * 0.75),
@@ -166,11 +187,13 @@ void MyStrategy::initialSetup()
 	case 6:
 	case 7:
 		line = LANE_TOP;
+		m_guardPoint = &TOP_GUARD_POINT;
 		break;
 
 	case 3:
 	case 8:
 		line = LANE_MIDDLE;
+		m_guardPoint = &MID_GUARD_POINT;
 		break;
 
 	case 4:
@@ -178,6 +201,7 @@ void MyStrategy::initialSetup()
 	case 9:
 	case 10:
 		line = LANE_BOTTOM;
+		m_guardPoint = &BOTTOM_GUARD_POINT;
 		break;
 
 	default:
@@ -391,6 +415,7 @@ MyStrategy::MyStrategy()
 	: m_lastStrafeChangeTick(0)
 	, m_lastStrafe(0.0)
 	, m_visualizer(make_unique<DebugVisualizer>())
+	, m_guardPoint(nullptr)
 {
 }
 
