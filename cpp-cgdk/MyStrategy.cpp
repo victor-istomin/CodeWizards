@@ -19,7 +19,7 @@
 using namespace model;
 using namespace std;
 
-const double MyStrategy::WAYPOINT_RADIUS = 300.0;
+const double MyStrategy::WAYPOINT_RADIUS = 150.0;
 
 Point2D MyStrategy::MID_GUARD_POINT    = Point2D(2000 - 400, 2000 + 200);
 Point2D MyStrategy::TOP_GUARD_POINT    = Point2D(35, 2000 - 400 + 35);
@@ -107,7 +107,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 	}
 
 	// Если нет других действий, просто продвигаемся вперёд.
-	if (move.getSpeed() < Point2D::k_epsilon && std::abs(move.getTurn() < PI/1000))
+	if (move.getSpeed() < Point2D::k_epsilon && std::abs(move.getTurn() < PI/1000) && !isRetreating)
 	{
 		Point2D nextWaypoint = getNextWaypoint();
 
@@ -252,7 +252,7 @@ void MyStrategy::initState(const model::Wizard& self, const model::World& world,
 	if (*m_spawnPoint == self)
 	{
 		// maybe, add additional clock tick checks for more complex actions
-		m_currentWaypointIndex = 0;
+		m_currentWaypointIndex = 1;   // [0] waypoint is for retreating only
 	}
 }
 
@@ -297,20 +297,12 @@ Point2D MyStrategy::getPreviousWaypoint()
 {
 	// assume that waypoint are sorted by-distance !!!
 
-	Point2D firstWaypoint = m_waypoints[0];
+	Point2D previousWaypoint = m_waypoints[std::max(0, m_currentWaypointIndex - 1)];
 
-	for (size_t waypointIndex = m_waypoints.size() - 1; waypointIndex > 0; --waypointIndex) 
-	{
-		Point2D waypoint = m_waypoints[waypointIndex];
+	if (previousWaypoint.getDistanceTo(m_state->m_self) <= WAYPOINT_RADIUS && m_currentWaypointIndex > 0)
+		previousWaypoint = m_waypoints[std::max(0, (--m_currentWaypointIndex) - 1)];
 
-		if (waypoint.getDistanceTo(m_state->m_self) <= WAYPOINT_RADIUS)
-			return m_waypoints[waypointIndex - 1];
-
-		if (firstWaypoint.getDistanceTo(waypoint) < firstWaypoint.getDistanceTo(m_state->m_self))
-			return waypoint;
-	}
-
-	return firstWaypoint;
+	return previousWaypoint;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -480,7 +472,7 @@ MyStrategy::MyStrategy()
 	, m_visualizer(make_unique<DebugVisualizer>())
 	, m_guardPoint(nullptr)
 	, m_spawnPoint(nullptr)
-	, m_currentWaypointIndex(0)
+	, m_currentWaypointIndex(1) // [0] waypoint is for retreating only
 {
 }
 

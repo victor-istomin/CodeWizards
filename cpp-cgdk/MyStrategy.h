@@ -65,7 +65,7 @@ private:
 	std::unique_ptr<Point2D>         m_spawnPoint;
 
 	TWaypoints m_waypoints;
-	size_t     m_currentWaypointIndex; 
+	int        m_currentWaypointIndex;
 
 	int m_lastStrafeChangeTick;
 	double m_lastStrafe;
