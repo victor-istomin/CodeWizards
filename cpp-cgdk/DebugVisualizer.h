@@ -1,9 +1,13 @@
 #pragma once
 
+#include "Map.h"
+#include "model/Wizard.h"
+#include "MyStrategy.h"
+
 #if _DEBUG
-#	include "../russian-ai-cup-visual/clients/cpp/Debug.h"
-#	include "model/Wizard.h"
-#	include <memory>
+#include "../russian-ai-cup-visual/clients/cpp/Debug.h"
+#include "PathFinder.h"
+#include <memory>
 
 	class DebugVisualizer
 	{
@@ -18,33 +22,132 @@
 		{
 			Point2D selfPoint = me;
 
-			const int32_t color = 0x44CC99;
+			const int32_t color = 0x555555;
 
 			m_debug.fillCircle(waypoint.m_x, waypoint.m_y, me.getRadius(), color);
 			m_debug.line(selfPoint.m_x, selfPoint.m_y, waypoint.m_x, waypoint.m_y, color);
+		}
+
+		void drawPath(const Map* map, const PathFinder::TilesPath& path, const Map::PointPath& smooth)
+		{
+			const int32_t color = 0x55FF55;
+
+			Point2D previous    = Point2D(0, 0);
+			bool    hasPresious = false;
+
+			// path itself
+
+			for (const auto& tile : path)
+			{
+				Point2D next = map->getTileCenter(tile);
+
+				if (hasPresious)
+					m_debug.line(previous.m_x, previous.m_y, next.m_x, next.m_y, color);
+
+				m_debug.circle(next.m_x, next.m_y, map->getTileSize() / 2, color);
+				previous = next;
+				hasPresious = true;
+			}
+
+			// and then smooth path 
+			const int32_t smoothColor = 0x5555FF;
+			previous = Point2D(0, 0);
+			hasPresious = false;
+			for (const auto& next : smooth)
+			{
+				if (hasPresious)
+					m_debug.line(previous.m_x, previous.m_y, next.m_x, next.m_y, smoothColor);
+
+				m_debug.fillCircle(next.m_x, next.m_y, map->getTileSize() / 2, smoothColor);
+				previous = next;
+				hasPresious = true;
+			}
+		}
+
+		void drawMap(const Map& map)
+		{
+			const Map::TilesMatrix rows = map.getTilesYX();
+			const int32_t tileColor = 0x99BBBB;
+			const int32_t gridColor = 0xDDDDDD;
+			const size_t tileSize = map.getTileSize();
+
+			// draw occupied tiles
+
+			for (size_t y = 0; y < rows.size(); ++y)
+			{
+				const Map::TilesRow& row = rows[y];
+				for (size_t x = 0; x < row.size(); ++x)
+				{
+					if (row[x].isOccupied())
+					{
+						Point2D tileTopLeft = Point2D(x * tileSize, y * tileSize);
+						Point2D tileBottomRight = tileTopLeft + Point2D(tileSize, tileSize);
+						m_debug.fillRect(tileTopLeft.m_x, tileTopLeft.m_y, tileBottomRight.m_x, tileBottomRight.m_y, tileColor);
+					}
+				}
+			}
+
+			// draw grid
+			for (size_t y = 0; y < rows.size(); ++y)
+				m_debug.line(0, y * tileSize, 4000, y * tileSize, gridColor);
+
+			for (size_t x = 0; x < rows.front().size(); ++x)
+				m_debug.line(x * tileSize, 0, x * tileSize, 4000, gridColor);
+		}
+
+		void drawWaypointsMap(const MyStrategy::TWaypointsMap& waypointsMap)
+		{
+			for (const auto& laneWaypoints : waypointsMap)
+			{
+				const auto& waypoints = laneWaypoints.second;
+				for (const Point2D& point : waypoints)
+					m_debug.fillCircle(point.m_x, point.m_y, 20, 0x222255);
+			}
 		}
 	};
 
 	class DebugMessage
 	{
 		DebugVisualizer& m_render;
-		const model::Wizard& m_self;
 
-		std::unique_ptr<Point2D> m_nextWaypoint;
+		const model::Wizard&      m_self;
+		const model::World&       m_world;
+		std::list<const Map*>     m_maps;
+ 		std::unique_ptr<Point2D>  m_nextWaypoint;
+
+		const MyStrategy::TWaypointsMap* m_waypoints;
+ 		std::tuple<PathFinder::TilesPath, Map::PointPath, const Map*> m_path;
 
 	public:
-		DebugMessage(DebugVisualizer& render, const model::Wizard& self)
-			: m_render(render), m_self(self)
+		DebugMessage(DebugVisualizer& render, const model::Wizard& self, const model::World& world)
+			: m_render(render), m_self(self), m_world(world), m_waypoints(nullptr)
 		{}
 
-		void setNextWaypoint(const Point2D& waypoint) { m_nextWaypoint = std::make_unique<Point2D>(waypoint); }
+		void setNextWaypoint(const Point2D& waypoint)                         { m_nextWaypoint = std::make_unique<Point2D>(waypoint); }
+		void visualizeMap(const Map* map)                                     { m_maps.push_back(map);  }
+		void visualizePath(const PathFinder::TilesPath& path, const Map* map) { m_path = std::make_tuple(path, map->smoothPath(m_world, map->tilesToPoints(path)), map); }
+		void visualizeWaypoints(const MyStrategy::TWaypointsMap& waypoints)   { m_waypoints = &waypoints; }
 
 		~DebugMessage()
 		{
 			// commit
 			m_render.beginPre();
+
+			for(const Map* map : m_maps)
+				m_render.drawMap(*map);
+
+			if (m_waypoints != nullptr)
+				m_render.drawWaypointsMap(*m_waypoints);
+
+			const auto& path   = std::get<0>(m_path);
+			const auto& smooth = std::get<1>(m_path);
+			const Map*  map = std::get<2>(m_path);
+			if (!path.empty())
+				m_render.drawPath(map, path, smooth);
+
 			if (m_nextWaypoint)
 				m_render.drawWaypoint(m_self, *m_nextWaypoint);
+
 			m_render.endPre();
 		}
 
@@ -61,10 +164,13 @@
 	{
 	public:
 
-		DebugMessage(DebugVisualizer& render, const model::Wizard& self) {}
+		DebugMessage(...) {}
 		~DebugMessage() { }
 
-		void setNextWaypoint(const Point2D& waypoint) { }
+		void setNextWaypoint(...)    {}
+		void visualizeMap(...)       {}
+		void visualizePath(...)      {}
+		void visualizeWaypoints(...) {}
 	};
 
 #endif

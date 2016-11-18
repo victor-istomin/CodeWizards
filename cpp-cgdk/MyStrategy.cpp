@@ -3,6 +3,9 @@
 
 #include "MyStrategy.h"
 #include "model/LivingUnit.h"
+#include "DebugVisualizer.h"
+#include "PathFinder.h"
+#include "MapsManager.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -16,22 +19,39 @@
 using namespace model;
 using namespace std;
 
-const double MyStrategy::WAYPOINT_RADIUS = 100.0;
+const double MyStrategy::WAYPOINT_RADIUS = 200.0;
 
 Point2D MyStrategy::MID_GUARD_POINT    = Point2D(2000 - 400, 2000 + 200);
 Point2D MyStrategy::TOP_GUARD_POINT    = Point2D(35, 2000 - 400 + 35);
 Point2D MyStrategy::BOTTOM_GUARD_POINT = Point2D(2000 + 400 - 35, 4000 - 400 + 35);
+
+// TODO - remove this from globals!
+MyStrategy::TWaypointsMap MyStrategy::g_waypointsMap;
 
 
 const double State::LOW_HP_FACTOR        = 0.3;
 
 const double Point2D::k_epsilon = 0.0001;
 
+#include <iostream>
+
 
 void MyStrategy::move(const Wizard& self, const World& world, const Game& game, Move& move) 
 {
 	initState(self, world, game, move);
-	DebugMessage debugMessage(*m_visualizer, self);
+	DebugMessage debugMessage(*m_visualizer, self, world);
+
+	/* test */
+	static bool bIsMapNeeded = false;
+	if (bIsMapNeeded)
+	{
+		Timer pathTimer("getPath");
+		const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
+
+ 		debugMessage.visualizeMap(map);
+		debugMessage.visualizeWaypoints(g_waypointsMap);
+// 		std::cout << "Path size: " << path.size() << std::endl;
+	}
 
 	// TODO - remove dirty hack inside !!!
 	const LivingUnit* nearestTarget = getNearestTarget();
@@ -44,22 +64,8 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 	if (isRetreating) 
 	{
 		Point2D previousWaypoint = getPreviousWaypoint();
-		retreatTo(previousWaypoint, move);
+		retreatTo(previousWaypoint, move, debugMessage);
 		debugMessage.setNextWaypoint(previousWaypoint);
-	}
-
-	if (m_state->m_isEnemyAround && isRetreating)
-	{
-		// Постоянно двигаемся из-стороны в сторону, чтобы по нам было сложнее попасть.
-		// Считаете, что сможете придумать более эффективный алгоритм уклонения? Попробуйте! ;)
-
-		if ((world.getTickIndex() - m_lastStrafeChangeTick) > STRAFE_CHANGE_INTERVAL)
-		{
-			m_lastStrafe = std::rand() % 2 ? game.getWizardStrafeSpeed() : -game.getWizardStrafeSpeed();
-			m_lastStrafeChangeTick = world.getTickIndex();
-		}
-		
-		move.setStrafeSpeed(m_lastStrafe);   // TODO - don't strafe to the enemy tower :)
 	}
 
 	// Если видим противника ...
@@ -99,7 +105,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 	}
 
 	// Если нет других действий, просто продвигаемся вперёд.
-	if (move.getSpeed() == 0 && std::abs(move.getTurn() < PI/1000))
+	if (move.getSpeed() < Point2D::k_epsilon && std::abs(move.getTurn() < PI/1000))
 	{
 		Point2D nextWaypoint = getNextWaypoint();
 
@@ -111,10 +117,9 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 		if (!isRushTime && m_guardPoint->getDistanceTo(self) < WAYPOINT_RADIUS)
 			nextWaypoint = *m_guardPoint;
 
-		if (nextWaypoint.getDistanceTo(self) > 1)
+		if (nextWaypoint.getDistanceTo(self) > self.getRadius())
 		{
-			goTo(nextWaypoint, move);
-			debugMessage.setNextWaypoint(nextWaypoint);
+			goTo(nextWaypoint, move, debugMessage);
 		}
 		else
 		{
@@ -140,54 +145,43 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 ///////////////////////////////////////////////////////////////////////////
 void MyStrategy::initialSetup()
 {
-	srand(time(nullptr));
+	m_spawnPoint = std::make_unique<Point2D>(m_state->m_self);
+
+	m_pathFinder = std::make_unique<PathFinder>();
+
+	srand((unsigned)time(nullptr));
 
 	double mapSize = m_state->m_game.getMapSize();
 	double wizardSize = m_state->m_self.getRadius();
 
-	std::map<model::LaneType, TWaypoints> waypointsMap;
-
 	MyStrategy::MID_GUARD_POINT = Point2D(mapSize * 0.5 - 400, mapSize * 0.5 + 200);
-	waypointsMap[LaneType::LANE_MIDDLE] = TWaypoints
+	g_waypointsMap[LaneType::LANE_MIDDLE] = TWaypoints
 	{ 
 		Point2D(100.0, mapSize - 100.0),
-		Point2D(600.0, mapSize - 200.0),
+//		Point2D(600.0, mapSize - 200.0),
 		Point2D(800.0, mapSize - 800.0),
 		MID_GUARD_POINT,
-		Point2D(mapSize - 600.0, 600.0),
+		Point2D(mapSize - 100.0, 100.0),
 	};
 
 	MyStrategy::TOP_GUARD_POINT = Point2D(wizardSize, mapSize * 0.5 - 400 + wizardSize);
-	waypointsMap[LaneType::LANE_TOP] = TWaypoints 
+	g_waypointsMap[LaneType::LANE_TOP] = TWaypoints
 	{
 		Point2D(100.0, mapSize - 100.0),
-		Point2D(100.0, mapSize - 400.0),
-		Point2D(200.0, mapSize - 800.0),
-		Point2D(200.0, mapSize - 1200.0),
+		Point2D(300.0, mapSize - 1200.0),
 		TOP_GUARD_POINT,
-		Point2D(200.0, mapSize * 0.25),
-		Point2D(200.0, 200.0),
-		Point2D(mapSize * 0.25, 200.0),
-		Point2D(mapSize * 0.5, 200.0),
-		Point2D(mapSize * 0.75, 200.0),
-		Point2D(mapSize - 200.0, 200.0)
+		Point2D(1200, 100.0),
+		Point2D(mapSize - 100.0, 100.0)
 	};
 
-	MyStrategy::BOTTOM_GUARD_POINT = Point2D(mapSize * 0.5 + 400 - wizardSize, mapSize - 350 + wizardSize);
-	waypointsMap[LaneType::LANE_BOTTOM] = TWaypoints
+	MyStrategy::BOTTOM_GUARD_POINT = Point2D(mapSize * 0.5 + 400 - wizardSize, mapSize - 330 + wizardSize);
+	g_waypointsMap[LaneType::LANE_BOTTOM] = TWaypoints
 	{
 		Point2D(100.0, mapSize - 100.0),
-		Point2D(400.0, mapSize - 100.0),
-		Point2D(800.0, mapSize - 200.0),
-		Point2D(mapSize * 0.25, mapSize - 200.0),
-		Point2D(mapSize * 0.5, mapSize - 200.0),
+		Point2D(1400.0, mapSize - 100.0),
 		BOTTOM_GUARD_POINT,
-		Point2D(mapSize * 0.75, mapSize - 200.0),
-		Point2D(mapSize - 200.0, mapSize - 200.0),
-		Point2D(mapSize - 200.0, mapSize * 0.75),
 		Point2D(mapSize - 200.0, mapSize * 0.5),
-		Point2D(mapSize - 200.0, mapSize * 0.25),
-		Point2D(mapSize - 200.0, 200.0)
+		Point2D(mapSize - 100.0, 100.0)
 	};
 
 	LaneType line = LaneType::_LANE_UNKNOWN_;
@@ -219,17 +213,7 @@ void MyStrategy::initialSetup()
 		break;
 	}
 
-	m_waypoints = waypointsMap[line];
-
-	// Наша стратегия исходит из предположения, что заданные нами ключевые точки упорядочены по убыванию
-	// дальности до последней ключевой точки. Сейчас проверка этого факта отключена, однако вы можете
-	// написать свою проверку, если решите изменить координаты ключевых точек.
-
-	/*Point2D lastWaypoint = waypoints[waypoints.length - 1];
-
-	Preconditions.checkState(ArrayUtils.isSorted(waypoints, (waypointA, waypointB) -> Double.compare(
-	waypointB.getDistanceTo(lastWaypoint), waypointA.getDistanceTo(lastWaypoint)
-	)));*/
+	m_waypoints = g_waypointsMap[line];
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -252,6 +236,22 @@ void MyStrategy::initState(const model::Wizard& self, const model::World& world,
 		// initial setup
 		initialSetup();
 	}
+
+	if (!m_maps)
+	{
+		m_maps = std::make_unique<MapsManager>(game, world, self);
+	}
+	else
+	{
+		m_maps->update(game, world, self);
+	}
+
+	// respawn detect
+	if (*m_spawnPoint == self)
+	{
+		// maybe, add additional clock tick checks for more complex actions
+		m_currentWaypointIndex = 0;
+	}
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -269,21 +269,15 @@ Point2D MyStrategy::getNextWaypoint()
 {
 	// assume that waypoint are sorted by-distance !!!
 
-	int lastWaypointIndex = m_waypoints.size() - 1;
-	Point2D lastWaypoint = m_waypoints[lastWaypointIndex];
+	size_t lastWaypointIndex = m_waypoints.empty() ? 0 : m_waypoints.size() - 1;
 
-	for (int waypointIndex = 0; waypointIndex < lastWaypointIndex; ++waypointIndex) 
+	Point2D currentWaypoint = m_waypoints[m_currentWaypointIndex];
+	if (currentWaypoint.getDistanceTo(m_state->m_self) < WAYPOINT_RADIUS && m_currentWaypointIndex < lastWaypointIndex)
 	{
-		Point2D waypoint = m_waypoints[waypointIndex];
-
-		if (waypoint.getDistanceTo(m_state->m_self) <= WAYPOINT_RADIUS)
-			return m_waypoints[waypointIndex + 1];
-
-		if (lastWaypoint.getDistanceTo(waypoint) < lastWaypoint.getDistanceTo(m_state->m_self))
-			return waypoint;
+		currentWaypoint = m_waypoints[++m_currentWaypointIndex];
 	}
 
-	return lastWaypoint;
+	return currentWaypoint;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -303,7 +297,7 @@ Point2D MyStrategy::getPreviousWaypoint()
 
 	Point2D firstWaypoint = m_waypoints[0];
 
-	for (int waypointIndex = m_waypoints.size() - 1; waypointIndex > 0; --waypointIndex) 
+	for (size_t waypointIndex = m_waypoints.size() - 1; waypointIndex > 0; --waypointIndex) 
 	{
 		Point2D waypoint = m_waypoints[waypointIndex];
 
@@ -401,9 +395,38 @@ const model::LivingUnit* MyStrategy::getNearestTarget()
 // Return:
 //
 ///////////////////////////////////////////////////////////////////////////
-void MyStrategy::goTo(const Point2D& point, model::Move& move)
+void MyStrategy::goTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage)
 {
-	double angle = m_state->m_self.getAngleTo(point.m_x, point.m_y);
+	Timer timer(__FUNCTION__);
+
+	Point2D target = point;
+
+	const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
+
+	PathFinder::TilesPath path = m_pathFinder->getPath(m_state->m_self, point, *map);
+	if (path.empty())
+	{
+		int x = 0;
+		x++;
+	}
+
+	Map::PointPath pointPath = map->tilesToPoints(path); pointPath.push_front(m_state->m_self);
+	Map::PointPath smoothPath = map->smoothPath(m_state->m_world, pointPath);
+
+	// remove 'self' from path after smoothing
+	if (!smoothPath.empty())
+		smoothPath.pop_front();
+
+	debugMessage.setNextWaypoint(point);
+	debugMessage.visualizePath(path, map);
+
+	assert(!smoothPath.empty());
+	if (!smoothPath.empty())
+	{
+		target = smoothPath.front();
+	}
+	
+	double angle = m_state->m_self.getAngleTo(target.m_x, target.m_y);
 
 	move.setTurn(angle);
 
@@ -411,15 +434,42 @@ void MyStrategy::goTo(const Point2D& point, model::Move& move)
 		move.setSpeed(m_state->m_game.getWizardForwardSpeed());
 }
 
-void MyStrategy::retreatTo(const Point2D& point, model::Move& move)
+void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage)
 {
 	double forwardAngle = m_state->m_self.getAngleTo(point.m_x, point.m_y);
 	double angle = (forwardAngle < 0 ? 2*PI - forwardAngle : forwardAngle) - PI;
 
-	move.setTurn(angle);  // may be overridden when shooting 
+	Point2D target = point;
 
-// 	if (abs(angle) < m_state->m_game.getStaffSector() / 4.0)    // TODO: factor is ok? 
-		move.setSpeed(- m_state->m_game.getWizardBackwardSpeed());
+	const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
+
+	PathFinder::TilesPath path = m_pathFinder->getPath(m_state->m_self, point, *map);
+	if (path.empty())
+	{
+		int x = 0;
+		x++;
+	}
+
+	Map::PointPath pointPath = map->tilesToPoints(path); pointPath.push_front(m_state->m_self);
+	Map::PointPath smoothPath = map->smoothPath(m_state->m_world, pointPath);
+
+	// remove 'self' from path after smoothing
+	if (!smoothPath.empty())
+		smoothPath.pop_front();
+
+	debugMessage.visualizePath(path, map);
+
+	assert(!smoothPath.empty());
+	if (!smoothPath.empty())
+	{
+		target = smoothPath.front();
+	}
+
+	const double speed = 4.0; // todo - remove magic constant
+	double angleTo = m_state->m_self.getAngleTo(target.m_x, target.m_y);
+	Vec2d vect = Vec2d(speed * std::cos(angleTo), speed * std::sin(angleTo));
+	move.setSpeed(vect.m_x);
+	move.setStrafeSpeed(vect.m_y);
 }
 
 MyStrategy::MyStrategy()
@@ -427,6 +477,8 @@ MyStrategy::MyStrategy()
 	, m_lastStrafe(0.0)
 	, m_visualizer(make_unique<DebugVisualizer>())
 	, m_guardPoint(nullptr)
+	, m_spawnPoint(nullptr)
+	, m_currentWaypointIndex(0)
 {
 }
 

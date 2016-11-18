@@ -12,12 +12,12 @@ public:
 	Vec2d(double x, double y) : m_x(x), m_y(y) {}
 	Vec2d(const Vec2d& v)     : m_x(v.m_x), m_y(v.m_y) {}
 
-	template <typename Point>
-	static Vec2d fromPoint(const Point& p) { return Vec2d(p.x, p.y); }
+	template <typename Point> static Vec2d fromPoint(const Point& p) { return Vec2d(p.m_x, p.m_y); }
+	template <typename Point>        Point toPoint() const           { return Point(m_x, m_y); }
 
-	Vec2d& operator=(const Vec2d& v) { m_x = v.m_x; m_y = v.m_y; return *this; }
-	Vec2d operator+(Vec2d& v)	const { return Vec2d(m_x + v.m_x, m_y + v.m_y); }
-	Vec2d operator-(Vec2d& v) const { return Vec2d(m_x - v.m_x, m_y - v.m_y); }
+	Vec2d& operator=(const Vec2d& v)       { m_x = v.m_x; m_y = v.m_y; return *this; }
+	Vec2d  operator+(const Vec2d& v) const { return Vec2d(m_x + v.m_x, m_y + v.m_y); }
+	Vec2d  operator-(const Vec2d& v) const { return Vec2d(m_x - v.m_x, m_y - v.m_y); }
 
 	Vec2d& operator+=(Vec2d& v) { m_x += v.m_x; m_y += v.m_y; return *this; }
 	Vec2d& operator-=(Vec2d& v) { m_x -= v.m_x; m_y -= v.m_y; return *this; }
@@ -39,8 +39,8 @@ public:
 		double theta = deg / 180.0 * PI;
 		double c = cos(theta);
 		double s = sin(theta);
-		double m_x = m_x * c - m_y * s;
-		double m_y = m_x * s + m_y * c;
+		m_x = m_x * c - m_y * s;
+		m_y = m_x * s + m_y * c;
 
 		return *this;
 	}
@@ -54,8 +54,8 @@ public:
 		return *this;
 	}
 
-	double dist(const Vec2d& v) const { Vec2d d(v.m_x - m_x, v.m_y - m_y); return d.length(); }
-	double length()            const { return std::hypot(m_x, m_y); }
+	double dist(const Vec2d& v) const { return (*this - v).length(); }
+	double length()             const { return std::hypot(m_x, m_y); }   // note: std::hypot() might be slower than naive sqrd(x*x + y*y);
 
 	Vec2d& truncate(double length)
 	{
