@@ -54,6 +54,8 @@ private:
 	static Point2D      MID_GUARD_POINT;
 	static Point2D      BOTTOM_GUARD_POINT;
 
+	static Point2D      BONUS_POINTS[];
+
 	static TWaypointsMap g_waypointsMap;
 
 	std::unique_ptr<DebugVisualizer> m_visualizer;

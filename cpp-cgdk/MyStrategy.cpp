@@ -19,11 +19,13 @@
 using namespace model;
 using namespace std;
 
-const double MyStrategy::WAYPOINT_RADIUS = 200.0;
+const double MyStrategy::WAYPOINT_RADIUS = 300.0;
 
 Point2D MyStrategy::MID_GUARD_POINT    = Point2D(2000 - 400, 2000 + 200);
 Point2D MyStrategy::TOP_GUARD_POINT    = Point2D(35, 2000 - 400 + 35);
 Point2D MyStrategy::BOTTOM_GUARD_POINT = Point2D(2000 + 400 - 35, 4000 - 400 + 35);
+
+Point2D MyStrategy::BONUS_POINTS[] = { Point2D(4000 * 0.3, 4000 * 0.3), Point2D(4000 * 0.7, 4000 * 0.7) };
 
 // TODO - remove this from globals!
 MyStrategy::TWaypointsMap MyStrategy::g_waypointsMap;
