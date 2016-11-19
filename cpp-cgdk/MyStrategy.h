@@ -13,6 +13,11 @@
 #include <cmath>
 #include <array>
 
+struct StorableState
+{
+	std::unique_ptr<model::Move> m_previousMove;
+};
+
 struct State
 {
 	static const double LOW_HP_FACTOR;
@@ -21,16 +26,33 @@ struct State
 	const model::World&  m_world;
 	const model::Game&   m_game;
 	const model::Move&   m_move;
+	const StorableState& m_oldState;
 
 	bool m_isEnemyAround;
 	bool m_isUnderMissile;
 	bool m_isLowHP;
+	bool m_isGoingToBonus;  // not yet implemented, always false
 
 	std::array<int, model::_ACTION_COUNT_> m_cooldownTicks;
 
-	State(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move);
+	State(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, const StorableState& m_oldState);
 
 	bool isReadyForAction(model::ActionType action) const              { return m_cooldownTicks[action] == 0; }
+	bool isGotStuck() const
+	{
+		return  std::hypot(m_self.getSpeedX(), m_self.getSpeedY()) < Point2D::k_epsilon
+			&&  m_oldState.m_previousMove != nullptr
+			&& (m_oldState.m_previousMove->getSpeed() > Point2D::k_epsilon || m_oldState.m_previousMove->getStrafeSpeed() > Point2D::k_epsilon); 
+	}
+
+	struct HistoryWriter
+	{
+		const State&   m_state;
+		StorableState& m_storableState;
+
+		HistoryWriter(const State& state, StorableState& oldState) : m_state(state), m_storableState(oldState) {}
+		~HistoryWriter()                                           { m_storableState.m_previousMove = std::make_unique<model::Move>(m_state.m_move); }
+	};
 };
 
 class Map;
@@ -60,6 +82,7 @@ private:
 
 	std::unique_ptr<DebugVisualizer> m_visualizer;
 	std::unique_ptr<State>           m_state;
+	StorableState                    m_oldState;
 	std::unique_ptr<MapsManager>     m_maps;
 	std::unique_ptr<PathFinder>      m_pathFinder;
 	std::unique_ptr<Point2D>         m_spawnPoint;
@@ -82,6 +105,12 @@ private:
 	// actions
 	void goTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage);
 	void retreatTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage);
+
+	double getSafeDistance(const model::Unit* enemy);
+	
+	auto getWizard(const model::Unit* unit)   { return dynamic_cast<const model::Wizard*>(unit); }
+	auto getMinion(const model::Unit* unit)   { return dynamic_cast<const model::Minion*>(unit); }
+	auto getBuilding(const model::Unit* unit) { return dynamic_cast<const model::Building*>(unit); }
 
 public:
     MyStrategy();

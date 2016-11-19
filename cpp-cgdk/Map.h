@@ -278,7 +278,7 @@ protected:
 		int x_inc, y_inc;
 		double error;
 
-		if (dx == 0)
+		if (std::abs(dx) < Point2D::k_epsilon)
 		{
 			x_inc = 0;
 			error = std::numeric_limits<double>::infinity();
@@ -296,7 +296,7 @@ protected:
 			error = (tileFrom.m_x - floor(tileFrom.m_x)) * dy;
 		}
 
-		if (dy == 0)
+		if (std::abs(dy) < Point2D::k_epsilon)
 		{
 			y_inc = 0;
 			error -= std::numeric_limits<double>::infinity();

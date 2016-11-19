@@ -41,6 +41,7 @@ const double Point2D::k_epsilon = 0.0001;
 void MyStrategy::move(const Wizard& self, const World& world, const Game& game, Move& move) 
 {
 	initState(self, world, game, move);
+	State::HistoryWriter updater(*m_state, m_oldState);
 	DebugMessage debugMessage(*m_visualizer, self, world);
 
 	/* test */
@@ -231,7 +232,7 @@ void MyStrategy::initialSetup()
 ///////////////////////////////////////////////////////////////////////////
 void MyStrategy::initState(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move)
 {
-	m_state = std::make_unique<State>(self, world, game, move);
+	m_state = std::make_unique<State>(self, world, game, move, m_oldState);
 
 	if (m_waypoints.empty())
 	{
@@ -430,6 +431,39 @@ void MyStrategy::goTo(const Point2D& point, model::Move& move, DebugMessage& deb
 
 void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage)
 {
+	if (m_state->m_isLowHP)
+	{
+		const model::Wizard& self  = m_state->m_self;
+		const model::World& world = m_state->m_world;
+
+		const model::Unit* enemy = nullptr;
+		auto findNearestEnemy = [&self, &world, &enemy, this](const model::Unit& unit) 
+		{
+			if (unit.getFaction() == self.getFaction())  
+				return;
+
+			if (enemy == nullptr)
+			{
+				enemy = &unit;
+			}
+			else
+			{
+				double safeGap    = self.getDistanceTo(unit) - getSafeDistance(&unit);
+				double oldSafeGap = self.getDistanceTo(*enemy) - getSafeDistance(enemy);
+
+				if (safeGap < oldSafeGap)
+					enemy = &unit;
+			}
+		};
+
+		std::for_each(world.getWizards().begin(), world.getWizards().end(),     findNearestEnemy);
+		std::for_each(world.getMinions().begin(), world.getMinions().end(),     findNearestEnemy);
+		std::for_each(world.getBuildings().begin(), world.getBuildings().end(), findNearestEnemy);
+
+		if (enemy == nullptr || enemy->getDistanceTo(self) > getSafeDistance(enemy))
+			return;  // don't retreat too far
+	}
+
 	double forwardAngle = m_state->m_self.getAngleTo(point.m_x, point.m_y);
 	double angle = (forwardAngle < 0 ? 2*PI - forwardAngle : forwardAngle) - PI;
 
@@ -464,6 +498,44 @@ void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage
 	Vec2d vect = Vec2d(speed * std::cos(angleTo), speed * std::sin(angleTo));
 	move.setSpeed(vect.m_x);
 	move.setStrafeSpeed(vect.m_y);
+
+	if (m_state->isGotStuck())
+	{
+		// try freeing oneself
+		move.setStrafeSpeed((rand() % 2 == 0 ? -1 : 1) * m_state->m_game.getWizardStrafeSpeed());
+		if (rand() % 2 == 0)
+			move.setSpeed(0.1);
+	}
+}
+
+double MyStrategy::getSafeDistance(const model::Unit* enemy)
+{
+	double safeDistance = m_state->m_game.getFactionBaseAttackRange();
+	double selfRadius   = m_state->m_self.getRadius();
+
+	// todo: take enemy's cooldown into account?
+	// todo: take enemies count into account?
+
+	if (getWizard(enemy))
+		safeDistance = getWizard(enemy)->getVisionRange() + selfRadius;
+
+	const model::Minion* minion = getMinion(enemy);
+	if (minion)
+	{
+		const static double SAFE_ORK_MULTIPLIER = 4.0;
+		safeDistance = minion->getType() == model::MINION_ORC_WOODCUTTER
+			? (minion->getRadius() + selfRadius) * SAFE_ORK_MULTIPLIER
+			: minion->getVisionRange() + selfRadius;
+	}
+
+	const model::Building* building = getBuilding(enemy);
+	if (building)
+	{
+		safeDistance = selfRadius + 
+			(building->getType() == model::BUILDING_FACTION_BASE ? m_state->m_game.getFactionBaseAttackRange() : m_state->m_game.getGuardianTowerVisionRange());
+	}
+
+	return safeDistance;
 }
 
 MyStrategy::MyStrategy()
@@ -473,15 +545,18 @@ MyStrategy::MyStrategy()
 	, m_guardPoint(nullptr)
 	, m_spawnPoint(nullptr)
 	, m_currentWaypointIndex(1) // [0] waypoint is for retreating only
+	, m_oldState()
 {
 }
 
-State::State(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move) 
+State::State(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, const StorableState& oldState) 
 	: m_self(self), m_world(world), m_game(game), m_move(move)
 	, m_isEnemyAround(false)
 	, m_isUnderMissile(false)
 	, m_isLowHP(false)
 	, m_cooldownTicks()
+	, m_isGoingToBonus(false)
+	, m_oldState(oldState)
 {
 	const auto& wizards = m_world.getWizards();
 	const Point2D selfPoint = self;
