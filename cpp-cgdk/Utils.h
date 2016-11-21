@@ -79,7 +79,7 @@ struct Timer
 #endif
 
 template <typename OutputIterator, typename Functor, typename UnitCollection>
-void filterIf(OutputIterator& destination, const Functor& predicate, const UnitCollection& units)
+void filterIf(OutputIterator destination, const Functor& predicate, const UnitCollection& units)
 {
 	for (const auto& unit : units)
 	{
@@ -91,7 +91,7 @@ void filterIf(OutputIterator& destination, const Functor& predicate, const UnitC
 }
 
 template <typename OutputIterator, typename Functor, typename UnitCollection, typename ...Parameters>
-void filterIf(OutputIterator& destination, const Functor& predicate, const UnitCollection& units, const Parameters& ... params)
+void filterIf(OutputIterator destination, const Functor& predicate, const UnitCollection& units, const Parameters& ... params)
 {
 	filterIf(destination, predicate, units);
 
@@ -102,7 +102,7 @@ void filterIf(OutputIterator& destination, const Functor& predicate, const UnitC
 }
 
 template <typename PointerType, typename Functor, typename ...Parameters>
-std::vector<PointerType> filterPointers(const Functor& predicate, typename Parameters& ... params)
+std::vector<PointerType> filterPointers(const Functor& predicate, const Parameters& ... params)
 {
 	std::vector<PointerType> results;
 	results.reserve(128);

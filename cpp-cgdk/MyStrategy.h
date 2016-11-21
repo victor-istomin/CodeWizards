@@ -112,26 +112,10 @@ private:
 	auto getBuilding(const model::Unit* unit) const { return dynamic_cast<const model::Building*>(unit); }
 
 	double getSafeDistance(const model::Unit& enemy);
+
+	double getMaxDamage(const model::Unit* u) const;
 	template <typename UnitType> double getMaxDamage(const UnitType& u) const      { return u.getDamage(); }
-	template <>                  double getMaxDamage(const model::Wizard& u) const { return m_state->m_game.getMagicMissileDirectDamage(); };  // TODO - calculate
-
-	double getMaxDamage(const model::Unit* u) const
-	{
-		auto wizard = getWizard(u);
-		if (wizard)
-			return getMaxDamage(*wizard);
-		
-		auto minion = getMinion(u);
-		if (minion)
-			return getMaxDamage(*minion);
-
-		auto builing = getBuilding(u);
-		if (builing)
-			return getMaxDamage(*builing);
-
-		assert(false && "unknown unit type");
-		return m_state->m_game.getMagicMissileDirectDamage();
-	}
+	// also, there is a specialization out of class scope
 
 	bool isEnemy(const model::Unit& u) const  { return u.getFaction() != model::FACTION_NEUTRAL && u.getFaction() != m_state->m_self.getFaction(); }
 
@@ -140,5 +124,10 @@ public:
 
     void move(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move) override;
 };
+
+template <> inline double MyStrategy::getMaxDamage<model::Wizard>(const model::Wizard& u) const { return m_state->m_game.getMagicMissileDirectDamage(); };  // TODO - calculate
+
+
+
 
 #endif

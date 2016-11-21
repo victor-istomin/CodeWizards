@@ -559,6 +559,24 @@ double MyStrategy::getSafeDistance(const model::Unit& enemy)
 	return safeDistance;
 }
 
+double MyStrategy::getMaxDamage(const model::Unit* u) const
+{
+	auto wizard = getWizard(u);
+	if (wizard)
+		return getMaxDamage(*wizard);
+
+	auto minion = getMinion(u);
+	if (minion)
+		return getMaxDamage(*minion);
+
+	auto builing = getBuilding(u);
+	if (builing)
+		return getMaxDamage(*builing);
+
+	assert(false && "unknown unit type");
+	return m_state->m_game.getMagicMissileDirectDamage();
+}
+
 MyStrategy::MyStrategy()
 	: m_lastStrafeChangeTick(0)
 	, m_lastStrafe(0.0)
