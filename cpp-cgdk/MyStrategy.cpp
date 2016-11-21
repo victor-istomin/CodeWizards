@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <iterator>
 #include <limits>
+#include <numeric>
 
 
 using namespace model;
@@ -59,8 +60,26 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 	// TODO - remove dirty hack inside !!!
 	const LivingUnit* nearestTarget = getNearestTarget();
 
-	double tooCloseDistance = 3 * game.getStaffRange() + self.getRadius() + (m_state->m_isLowHP ? game.getStaffRange() : 0);
-	bool isTooCloseToEnemy = nearestTarget && self.getDistanceTo(*nearestTarget) < tooCloseDistance;
+	/**/
+	auto dangerousEnemies = filterPointers<const model::Unit*>(
+		[&self, this](const model::Unit& u) {return isEnemy(u) && self.getDistanceTo(u) < getSafeDistance(u); },
+		world.getBuildings(), world.getWizards(), world.getMinions());
+
+	double totalEnemiesDamage = std::accumulate(dangerousEnemies.begin(), dangerousEnemies.end(), 0.0,
+		[this](double sum, const model::Unit* enemy) {return sum + getMaxDamage(enemy); });
+
+	bool isNearOrk = dangerousEnemies.end() != std::find_if(dangerousEnemies.begin(), dangerousEnemies.end(),
+		[this](const Unit* u) { return getMinion(u) != nullptr && getMinion(u)->getType() == model::MINION_ORC_WOODCUTTER; });
+
+	bool isTooCloseToEnemy = isNearOrk || self.getLife() < totalEnemiesDamage;
+	if (self.getLife() < totalEnemiesDamage)
+	{
+		m_state->m_isLowHP = true;  // this also activates "don't retreat too far" feature
+	}
+	/**/
+
+	// double tooCloseDistance = 3 * game.getStaffRange() + self.getRadius() + (m_state->m_isLowHP ? game.getStaffRange() : 0);
+	// bool isTooCloseToEnemy = nearestTarget && self.getDistanceTo(*nearestTarget) < tooCloseDistance;
 
 	// Если осталось мало жизненной энергии, отступаем к предыдущей ключевой точке на линии.
 	bool isRetreating = isTooCloseToEnemy || m_state->m_isLowHP;
@@ -448,8 +467,8 @@ void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage
 			}
 			else
 			{
-				double safeGap    = self.getDistanceTo(unit) - getSafeDistance(&unit);
-				double oldSafeGap = self.getDistanceTo(*enemy) - getSafeDistance(enemy);
+				double safeGap    = self.getDistanceTo(unit) - getSafeDistance(unit);
+				double oldSafeGap = self.getDistanceTo(*enemy) - getSafeDistance(*enemy);
 
 				if (safeGap < oldSafeGap)
 					enemy = &unit;
@@ -460,7 +479,7 @@ void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage
 		std::for_each(world.getMinions().begin(), world.getMinions().end(),     findNearestEnemy);
 		std::for_each(world.getBuildings().begin(), world.getBuildings().end(), findNearestEnemy);
 
-		if (enemy == nullptr || enemy->getDistanceTo(self) > getSafeDistance(enemy))
+		if (enemy == nullptr || enemy->getDistanceTo(self) > getSafeDistance(*enemy))
 			return;  // don't retreat too far
 	}
 
@@ -508,7 +527,7 @@ void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage
 	}
 }
 
-double MyStrategy::getSafeDistance(const model::Unit* enemy)
+double MyStrategy::getSafeDistance(const model::Unit& enemy)
 {
 	double safeDistance = m_state->m_game.getFactionBaseAttackRange();
 	double selfRadius   = m_state->m_self.getRadius();
@@ -516,23 +535,25 @@ double MyStrategy::getSafeDistance(const model::Unit* enemy)
 	// todo: take enemy's cooldown into account?
 	// todo: take enemies count into account?
 
-	if (getWizard(enemy))
-		safeDistance = getWizard(enemy)->getVisionRange() + selfRadius;
+	// TODO - carefully test condition when enemy-attack-range < distance < exp-getting-radius
+	if (getWizard(&enemy))
+		safeDistance = getWizard(&enemy)->getCastRange() + selfRadius;
 
-	const model::Minion* minion = getMinion(enemy);
+	const model::Minion* minion = getMinion(&enemy);
 	if (minion)
 	{
-		const static double SAFE_ORK_MULTIPLIER = 4.0;
-		safeDistance = minion->getType() == model::MINION_ORC_WOODCUTTER
-			? (minion->getRadius() + selfRadius) * SAFE_ORK_MULTIPLIER
-			: minion->getVisionRange() + selfRadius;
+		// TODO - carefully test condition when minion-attack-range < distance < self-attack-range 
+		const static double SAFE_GAP = minion->getType() == model::MINION_ORC_WOODCUTTER ? 2 * selfRadius : selfRadius;
+		safeDistance = SAFE_GAP +
+			(minion->getType() == model::MINION_ORC_WOODCUTTER
+			? (m_state->m_game.getOrcWoodcutterAttackRange() + selfRadius)
+			: (m_state->m_game.getFetishBlowdartAttackRange() + selfRadius));
 	}
 
-	const model::Building* building = getBuilding(enemy);
+	const model::Building* building = getBuilding(&enemy);
 	if (building)
 	{
-		safeDistance = selfRadius + 
-			(building->getType() == model::BUILDING_FACTION_BASE ? m_state->m_game.getFactionBaseAttackRange() : m_state->m_game.getGuardianTowerVisionRange());
+		safeDistance = selfRadius + building->getAttackRange();
 	}
 
 	return safeDistance;

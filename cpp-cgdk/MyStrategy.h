@@ -12,6 +12,7 @@
 #include <map>
 #include <cmath>
 #include <array>
+#include <cassert>
 
 struct StorableState
 {
@@ -106,11 +107,33 @@ private:
 	void goTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage);
 	void retreatTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage);
 
-	double getSafeDistance(const model::Unit* enemy);
-	
-	auto getWizard(const model::Unit* unit)   { return dynamic_cast<const model::Wizard*>(unit); }
-	auto getMinion(const model::Unit* unit)   { return dynamic_cast<const model::Minion*>(unit); }
-	auto getBuilding(const model::Unit* unit) { return dynamic_cast<const model::Building*>(unit); }
+	auto getWizard(const model::Unit* unit)   const { return dynamic_cast<const model::Wizard*>(unit); }
+	auto getMinion(const model::Unit* unit)   const { return dynamic_cast<const model::Minion*>(unit); }
+	auto getBuilding(const model::Unit* unit) const { return dynamic_cast<const model::Building*>(unit); }
+
+	double getSafeDistance(const model::Unit& enemy);
+	template <typename UnitType> double getMaxDamage(const UnitType& u) const      { return u.getDamage(); }
+	template <>                  double getMaxDamage(const model::Wizard& u) const { return m_state->m_game.getMagicMissileDirectDamage(); };  // TODO - calculate
+
+	double getMaxDamage(const model::Unit* u) const
+	{
+		auto wizard = getWizard(u);
+		if (wizard)
+			return getMaxDamage(*wizard);
+		
+		auto minion = getMinion(u);
+		if (minion)
+			return getMaxDamage(*minion);
+
+		auto builing = getBuilding(u);
+		if (builing)
+			return getMaxDamage(*builing);
+
+		assert(false && "unknown unit type");
+		return m_state->m_game.getMagicMissileDirectDamage();
+	}
+
+	bool isEnemy(const model::Unit& u) const  { return u.getFaction() != model::FACTION_NEUTRAL && u.getFaction() != m_state->m_self.getFaction(); }
 
 public:
     MyStrategy();

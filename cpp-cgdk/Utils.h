@@ -1,5 +1,7 @@
 #pragma once
 #include <algorithm>
+#include <vector>
+#include <iterator>
 
 class NonCopyable
 {
@@ -75,6 +77,39 @@ struct Timer
 #ifdef min
 #undef min
 #endif
+
+template <typename OutputIterator, typename Functor, typename UnitCollection>
+void filterIf(OutputIterator& destination, const Functor& predicate, const UnitCollection& units)
+{
+	for (const auto& unit : units)
+	{
+		if (predicate(unit))
+		{
+			*destination++ = &unit;
+		}
+	}
+}
+
+template <typename OutputIterator, typename Functor, typename UnitCollection, typename ...Parameters>
+void filterIf(OutputIterator& destination, const Functor& predicate, const UnitCollection& units, const Parameters& ... params)
+{
+	filterIf(destination, predicate, units);
+
+	if (sizeof...(Parameters) != 0)
+	{
+		filterIf(destination, predicate, params...);
+	}
+}
+
+template <typename PointerType, typename Functor, typename ...Parameters>
+std::vector<PointerType> filterPointers(const Functor& predicate, typename Parameters& ... params)
+{
+	std::vector<PointerType> results;
+	results.reserve(128);
+	filterIf(std::back_inserter(results), predicate, params...);
+	return std::move(results);
+}
+
 
 
 
