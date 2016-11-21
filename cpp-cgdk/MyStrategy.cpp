@@ -446,6 +446,8 @@ void MyStrategy::goTo(const Point2D& point, model::Move& move, DebugMessage& deb
 
 	if (abs(angle) < m_state->m_game.getStaffSector() / 4.0)
 		move.setSpeed(m_state->m_game.getWizardForwardSpeed());
+
+	tryDisengage(move);
 }
 
 void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage)
@@ -518,6 +520,11 @@ void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage
 	move.setSpeed(vect.m_x);
 	move.setStrafeSpeed(vect.m_y);
 
+	tryDisengage(move);
+}
+
+void MyStrategy::tryDisengage(model::Move &move)
+{
 	if (m_state->isGotStuck())
 	{
 		// try freeing oneself
