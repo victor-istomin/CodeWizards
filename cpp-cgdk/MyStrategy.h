@@ -107,6 +107,8 @@ private:
 	void goTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage);
 	void retreatTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage);
 
+	void tryDisengage(model::Move &move);
+
 	auto getWizard(const model::Unit* unit)   const { return dynamic_cast<const model::Wizard*>(unit); }
 	auto getMinion(const model::Unit* unit)   const { return dynamic_cast<const model::Minion*>(unit); }
 	auto getBuilding(const model::Unit* unit) const { return dynamic_cast<const model::Building*>(unit); }
