@@ -107,7 +107,7 @@ std::vector<PointerType> filterPointers(const Functor& predicate, const Paramete
 	std::vector<PointerType> results;
 	results.reserve(128);
 	filterIf(std::back_inserter(results), predicate, params...);
-	return std::move(results);
+	return results;
 }
 
 

@@ -26,7 +26,7 @@ Point2D MyStrategy::MID_GUARD_POINT    = Point2D(2000 - 400, 2000 + 200);
 Point2D MyStrategy::TOP_GUARD_POINT    = Point2D(35, 2000 - 400 + 35);
 Point2D MyStrategy::BOTTOM_GUARD_POINT = Point2D(2000 + 400 - 35, 4000 - 400 + 35);
 
-Point2D MyStrategy::BONUS_POINTS[] = { Point2D(4000 * 0.3, 4000 * 0.3), Point2D(4000 * 0.7, 4000 * 0.7) };
+const Point2D BonusSpawn::RESPAWN_POINTS[] = { Point2D(4000 * 0.3, 4000 * 0.3), Point2D(4000 * 0.7, 4000 * 0.7) };
 
 // TODO - remove this from globals!
 MyStrategy::TWaypointsMap MyStrategy::g_waypointsMap;
@@ -152,6 +152,17 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 			move.setTurn(angle);
 		}
 	}
+}
+
+bool MyStrategy::isUnitSeeing(const model::Unit* unit, const Point2D& point)
+{
+	double distance = point.getDistanceTo(*unit);
+	auto wizard = getWizard(unit);
+	auto minion = getMinion(unit);
+	auto builing = getBuilding(unit);
+	return (wizard && wizard->getVisionRange() > distance)
+		|| (minion && minion->getVisionRange() > distance)
+		|| (builing && builing->getVisionRange() > distance);  // other units have no eyes
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -597,12 +608,12 @@ MyStrategy::MyStrategy()
 
 State::State(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, const StorableState& oldState) 
 	: m_self(self), m_world(world), m_game(game), m_move(move)
-	, m_isEnemyAround(false)
 	, m_isUnderMissile(false)
 	, m_isLowHP(false)
 	, m_cooldownTicks()
 	, m_isGoingToBonus(false)
-	, m_oldState(oldState)
+	, m_storedState(oldState)
+	, m_bonuses(oldState.m_bonuses)
 {
 	const auto& wizards = m_world.getWizards();
 	const Point2D selfPoint = self;
@@ -614,18 +625,29 @@ State::State(const model::Wizard& self, const model::World& world, const model::
 	std::transform(m_cooldownTicks.begin(), m_cooldownTicks.end(), m_cooldownTicks.begin(),
 		[&self](int cooldown) { return std::max(cooldown, self.getRemainingActionCooldownTicks()); });
 
-	m_isEnemyAround = std::end(wizards) != std::find_if(wizards.begin(), wizards.end(), 
-		[&self, &selfPoint](const Wizard& w) 
-	{
-		double visionRange = std::max(self.getVisionRange(), w.getVisionRange());
-		return w.getFaction() != self.getFaction() && selfPoint.getDistanceTo(w) <= visionRange;
-	});
+	updateProjectiles();
+	updateBonuses();
+}
 
+//////////////////////////////////////////////////////////////////////////
+//
+// Method:
+//
+// Desc:
+//
+// Params:
+//
+// Return:
+//
+///////////////////////////////////////////////////////////////////////////
+void State::updateProjectiles()
+{
 	const auto& projectiles = m_world.getProjectiles();
-	auto itProjectile = std::find_if(std::begin(projectiles), std::end(projectiles),
-		[&selfPoint, &self](const model::Projectile& projectile)
+	const Point2D selfPoint = m_self;
+
+	auto itProjectile = std::find_if(std::begin(projectiles), std::end(projectiles), [&selfPoint, this](const model::Projectile& projectile)
 	{
-		Vec2d projectileSpeed   = Vec2d(projectile.getSpeedX(), projectile.getSpeedY());
+		Vec2d projectileSpeed = Vec2d(projectile.getSpeedX(), projectile.getSpeedY());
 		LineEquation firingLine = LineEquation::fromDirectionVector(projectile, projectileSpeed);
 
 		if (firingLine.isContains(selfPoint))
@@ -633,7 +655,7 @@ State::State(const model::Wizard& self, const model::World& world, const model::
 			return true;   // hit just into center
 		}
 
-		double collitionRadius = self.getRadius() + projectile.getRadius();
+		double collitionRadius = m_self.getRadius() + projectile.getRadius();
 
 		// http://stackoverflow.com/questions/1073336/circle-line-segment-collision-detection-algorithm
 		// compute the direction vector D from A to B
@@ -667,9 +689,9 @@ State::State(const model::Wizard& self, const model::World& world, const model::
 			Point2D F = Point2D((t - dt)*D.m_x + projectilePoint.m_x, (t - dt)*D.m_y + projectilePoint.m_y);
 			double test = F.getDistanceTo(selfPoint);
 
-				// compute second intersection point
-				// Gx = (t + dt)*Dx + Ax
-				// Gy = (t + dt)*Dy + Ay
+			// compute second intersection point
+			// Gx = (t + dt)*Dx + Ax
+			// Gy = (t + dt)*Dy + Ay
 		}
 
 		return LEC <= collitionRadius;
@@ -680,6 +702,51 @@ State::State(const model::Wizard& self, const model::World& world, const model::
 		// fire in the hall!
 		m_isUnderMissile = true;
 	}
-
-
 }
+
+//////////////////////////////////////////////////////////////////////////
+//
+// Method:
+//
+// Desc:
+//
+// Params:
+//
+// Return:
+//
+///////////////////////////////////////////////////////////////////////////
+void State::updateBonuses()
+{
+	auto teammates = filterPointers<const model::Unit*>([this](const model::Unit& u) {return u.getFaction() == m_self.getFaction(); },
+		m_world.getBuildings(), m_world.getWizards(), m_world.getMinions());
+
+	const auto& bonusUnits = m_world.getBonuses();
+
+	for (BonusSpawn& bonusSpawn : m_bonuses)
+	{
+		int bonusAppearancePeriod = m_game.getBonusAppearanceIntervalTicks();
+		bonusSpawn.m_nextSpawnTick = (1 + m_world.getTickCount() / bonusAppearancePeriod) + bonusAppearancePeriod;
+
+		if (m_world.getTickCount() < bonusAppearancePeriod)
+		{
+			bonusSpawn.m_state = BonusSpawn::NO_BONUS;
+		}
+		else
+		{
+			const Point2D& spawnPoint = bonusSpawn.m_point;
+			if (bonusUnits.end() != std::find_if(bonusUnits.begin(), bonusUnits.end(), [&spawnPoint](const model::Bonus& b) {return spawnPoint == b; }))
+			{
+				bonusSpawn.m_state = BonusSpawn::HAS_BONUS;
+			}
+			else
+			{
+				// if bonus spawn is visible but bonus is not, then there is no bonus, otherwise - bonus state is unknown
+				bool isVisible = teammates.end() != std::find_if(teammates.begin(), teammates.end(),
+					[&spawnPoint](const model::Unit* unit) { return MyStrategy::isUnitSeeing(unit, spawnPoint); });
+
+				bonusSpawn.m_state = isVisible ? BonusSpawn::NO_BONUS : BonusSpawn::UNKNOWN;
+			}
+		}
+	}
+}
+

@@ -14,9 +14,36 @@
 #include <array>
 #include <cassert>
 
+struct BonusSpawn
+{
+	enum State
+	{
+		UNKNOWN = 0,   // don't know whether there is a bonus
+		HAS_BONUS,
+		NO_BONUS,
+	};
+
+	Point2D m_point;
+	State   m_state;    // true if someone has collected bonus
+	int     m_nextSpawnTick;
+
+	static const size_t COUNT = 2;
+	static const Point2D RESPAWN_POINTS[];
+
+	BonusSpawn(const Point2D& point, State state) : m_point(point), m_state(state) {}
+};
+
+typedef std::array<BonusSpawn, BonusSpawn::COUNT> BonusSpawns;
+
 struct StorableState
 {
-	std::unique_ptr<model::Move> m_previousMove;
+	std::unique_ptr<model::Move>  m_previousMove;
+	BonusSpawns m_bonuses; 
+
+	StorableState() 
+		: m_previousMove()
+		, m_bonuses{ BonusSpawn(BonusSpawn::RESPAWN_POINTS[0], BonusSpawn::NO_BONUS), BonusSpawn(BonusSpawn::RESPAWN_POINTS[1], BonusSpawn::NO_BONUS) }
+	{}
 };
 
 struct State
@@ -27,9 +54,9 @@ struct State
 	const model::World&  m_world;
 	const model::Game&   m_game;
 	const model::Move&   m_move;
-	const StorableState& m_oldState;
+	const StorableState& m_storedState;
+	BonusSpawns          m_bonuses;
 
-	bool m_isEnemyAround;
 	bool m_isUnderMissile;
 	bool m_isLowHP;
 	bool m_isGoingToBonus;  // not yet implemented, always false
@@ -37,13 +64,15 @@ struct State
 	std::array<int, model::_ACTION_COUNT_> m_cooldownTicks;
 
 	State(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, const StorableState& m_oldState);
+	void updateProjectiles();
+	void updateBonuses();
 
 	bool isReadyForAction(model::ActionType action) const              { return m_cooldownTicks[action] == 0; }
 	bool isGotStuck() const
 	{
 		return  std::hypot(m_self.getSpeedX(), m_self.getSpeedY()) < Point2D::k_epsilon
-			&&  m_oldState.m_previousMove != nullptr
-			&& (m_oldState.m_previousMove->getSpeed() > Point2D::k_epsilon || m_oldState.m_previousMove->getStrafeSpeed() > Point2D::k_epsilon); 
+			&&  m_storedState.m_previousMove != nullptr
+			&& (m_storedState.m_previousMove->getSpeed() > Point2D::k_epsilon || m_storedState.m_previousMove->getStrafeSpeed() > Point2D::k_epsilon); 
 	}
 
 	struct HistoryWriter
@@ -52,7 +81,11 @@ struct State
 		StorableState& m_storableState;
 
 		HistoryWriter(const State& state, StorableState& oldState) : m_state(state), m_storableState(oldState) {}
-		~HistoryWriter()                                           { m_storableState.m_previousMove = std::make_unique<model::Move>(m_state.m_move); }
+		~HistoryWriter()
+		{ 
+			m_storableState.m_previousMove = std::make_unique<model::Move>(m_state.m_move); 
+			std::copy(m_state.m_bonuses.begin(), m_state.m_bonuses.end(), m_storableState.m_bonuses.begin());
+		}
 	};
 };
 
@@ -109,9 +142,9 @@ private:
 
 	void tryDisengage(model::Move &move);
 
-	auto getWizard(const model::Unit* unit)   const { return dynamic_cast<const model::Wizard*>(unit); }
-	auto getMinion(const model::Unit* unit)   const { return dynamic_cast<const model::Minion*>(unit); }
-	auto getBuilding(const model::Unit* unit) const { return dynamic_cast<const model::Building*>(unit); }
+	static auto getWizard(const model::Unit* unit)   { return dynamic_cast<const model::Wizard*>(unit); }
+	static auto getMinion(const model::Unit* unit)   { return dynamic_cast<const model::Minion*>(unit); }
+	static auto getBuilding(const model::Unit* unit) { return dynamic_cast<const model::Building*>(unit); }
 
 	double getSafeDistance(const model::Unit& enemy);
 
@@ -125,6 +158,8 @@ public:
     MyStrategy();
 
     void move(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move) override;
+
+	static bool isUnitSeeing(const model::Unit* unit, const Point2D& point);
 };
 
 template <> inline double MyStrategy::getMaxDamage<model::Wizard>(const model::Wizard& u) const { return m_state->m_game.getMagicMissileDirectDamage(); };  // TODO - calculate
