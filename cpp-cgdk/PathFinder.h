@@ -1,9 +1,10 @@
 #pragma once
-#include "MyStrategy.h"
 #include "Vec.h"
 #include "Map.h"
 #include <list>
+
 #include <unordered_map>
+#include "sparsepp.h"
 
 class PathFinder
 {
@@ -28,7 +29,8 @@ private:
 	};
 
 	// incredibly slow on MSVC on debug
-	typedef std::unordered_map<Map::TileIndex/*to*/, Transition, Map::TileIndex::Hasher> Transitions;
+	//typedef std::unordered_map<Map::TileIndex/*to*/, Transition, Map::TileIndex::Hasher> Transitions;
+	typedef spp::sparse_hash_map<Map::TileIndex/*to*/, Transition, Map::TileIndex::Hasher> Transitions;
 
 	double getHeuristics(const Map::TileIndex& from, const Map::TileIndex& to);  // should be 'admissible heuristics'
 	double getTransitionCost(const Map::TileIndex& from, const Map::TileIndex& to);

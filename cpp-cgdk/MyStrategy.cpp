@@ -31,10 +31,8 @@ const Point2D BonusSpawn::RESPAWN_POINTS[] = { Point2D(4000 * 0.3, 4000 * 0.3), 
 // TODO - remove this from globals!
 MyStrategy::TWaypointsMap MyStrategy::g_waypointsMap;
 
-
-const double State::LOW_HP_FACTOR        = 0.3;
-
-const double Point2D::k_epsilon = 0.0001;
+const double State::LOW_HP_FACTOR = 0.3;
+const double Point2D::k_epsilon   = 0.0001;
 
 #include <iostream>
 
@@ -54,6 +52,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 
  		debugMessage.visualizeMap(map);
 		debugMessage.visualizeWaypoints(g_waypointsMap);
+		debugMessage.visualizeBonuses(m_state->m_bonuses);
 // 		std::cout << "Path size: " << path.size() << std::endl;
 	}
 
@@ -85,7 +84,12 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 	bool isRetreating = isTooCloseToEnemy || m_state->m_isLowHP;
 	if (isRetreating) 
 	{
+		// TODO - consider retreating to most safe point both in case of bonus or not bonus
+
 		Point2D previousWaypoint = getPreviousWaypoint();
+		if (m_reasonableBonus)
+			previousWaypoint = m_reasonableBonus->m_point;
+
 		retreatTo(previousWaypoint, move, debugMessage);
 		debugMessage.setNextWaypoint(previousWaypoint);
 	}
@@ -122,6 +126,11 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 				}
 			}
 
+			if (m_reasonableBonus)
+			{
+				retreatTo(m_reasonableBonus->m_point, move, debugMessage);
+			}
+
 			return;
 		}
 	}
@@ -130,6 +139,9 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 	if (move.getSpeed() < Point2D::k_epsilon && std::abs(move.getTurn() < PI/1000) && !isRetreating)
 	{
 		Point2D nextWaypoint = getNextWaypoint();
+
+		if (m_reasonableBonus)
+			nextWaypoint = m_reasonableBonus->m_point;
 
 		// don't push too early
 		const int prepareTicks = m_state->m_game.getFactionMinionAppearanceIntervalTicks()
@@ -194,6 +206,7 @@ void MyStrategy::initialSetup()
 //		Point2D(600.0, mapSize - 200.0),
 		Point2D(800.0, mapSize - 800.0),
 		MID_GUARD_POINT,
+		Point2D(2400.0, 1600.0),
 		Point2D(mapSize - 100.0, 100.0),
 	};
 
@@ -285,6 +298,8 @@ void MyStrategy::initState(const model::Wizard& self, const model::World& world,
 		// maybe, add additional clock tick checks for more complex actions
 		m_currentWaypointIndex = 1;   // [0] waypoint is for retreating only
 	}
+
+	m_reasonableBonus = getReasonableBonus();
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -409,6 +424,59 @@ const model::LivingUnit* MyStrategy::getNearestTarget()
 	return nullptr;
 }
 
+const BonusSpawn* MyStrategy::getReasonableBonus()
+{
+	const double MAX_TRAVEL_DISTANCE = m_state->m_game.getWizardVisionRange() * 3;
+
+	const model::Wizard& self = m_state->m_self;
+	const int thisTick = m_state->m_world.getTickIndex();
+
+	const BonusSpawn* nearest = nullptr;
+	double minPathDistance = std::numeric_limits<double>::infinity();
+
+	for (const BonusSpawn& spawn : m_state->m_bonuses)
+	{
+		PathFinder::TilesPath tiles;
+		const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
+		Map::PointPath path = getSmoothPathTo(spawn.m_point, map, tiles);
+
+		double currentDistance = getPathLength(path);
+		if (currentDistance < MAX_TRAVEL_DISTANCE
+			&& (nearest == nullptr || currentDistance < minPathDistance))
+		{
+			nearest = &spawn;
+			minPathDistance = currentDistance;
+		}
+	}
+
+	const double MAX_TRAVEL_TIME = std::min(400, m_state->m_world.getTickCount() - m_state->m_world.getTickIndex());
+	if (nearest != nullptr && minPathDistance < MAX_TRAVEL_DISTANCE)
+	{
+		double distance = nearest->m_point.getDistanceTo(self);
+		double eta = distance / m_state->m_game.getWizardStrafeSpeed();
+		double timeToAppear = nearest->m_state == BonusSpawn::NO_BONUS ? m_state->nextBonusSpawnTick() - thisTick : 0;
+
+		if (timeToAppear < eta && eta < MAX_TRAVEL_TIME)
+		{
+			const double WAIT_DISTANCE = self.getRadius() * 3;
+			if (distance < WAIT_DISTANCE && nearest->m_state == BonusSpawn::NO_BONUS)
+			{
+				static BonusSpawn hack = BonusSpawn(*nearest);
+				hack = *nearest;
+				hack.m_point = self;  // wait point (TODO: remove dirty hack)
+
+				return &hack; // waif for appearing
+			}
+			else
+			{
+				return nearest;
+			}
+		}
+	}
+
+	return nullptr;
+}
+
 //////////////////////////////////////////////////////////////////////////
 //
 // Method:
@@ -501,23 +569,11 @@ void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage
 
 	Point2D target = point;
 
+	PathFinder::TilesPath tiles;
 	const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
+	Map::PointPath smoothPath = getSmoothPathTo(point, map, tiles);
 
-	PathFinder::TilesPath path = m_pathFinder->getPath(m_state->m_self, point, *map);
-	if (path.empty())
-	{
-		int x = 0;
-		x++;
-	}
-
-	Map::PointPath pointPath = map->tilesToPoints(path); pointPath.push_front(m_state->m_self);
-	Map::PointPath smoothPath = map->smoothPath(m_state->m_world, pointPath);
-
-	// remove 'self' from path after smoothing
-	if (!smoothPath.empty())
-		smoothPath.pop_front();
-
-	debugMessage.visualizePath(path, map);
+	debugMessage.visualizePath(tiles, map);
 
 	assert(!smoothPath.empty());
 	if (!smoothPath.empty())
@@ -532,6 +588,32 @@ void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage
 	move.setStrafeSpeed(vect.m_y);
 
 	tryDisengage(move);
+}
+
+Map::PointPath MyStrategy::getSmoothPathTo(const Point2D& point, const Map* map, PathFinder::TilesPath& tiles)
+{
+	tiles = m_pathFinder->getPath(m_state->m_self, point, *map);
+	Map::PointPath pointPath = map->tilesToPoints(tiles); pointPath.push_front(m_state->m_self);
+	Map::PointPath smoothPath = map->smoothPath(m_state->m_world, pointPath);
+
+	// remove 'self' from path after smoothing
+	if (!smoothPath.empty())
+		smoothPath.pop_front();
+
+	return smoothPath;
+}
+
+double MyStrategy::getPathLength(const Map::PointPath& path) const
+{
+	double length = 0;
+	Point2D previous = m_state->m_self;
+	for (const Point2D& step : path)
+	{
+		length  += previous.getDistanceTo(step);
+		previous = step;
+	}
+
+	return length;
 }
 
 void MyStrategy::tryDisengage(model::Move &move)
@@ -603,6 +685,7 @@ MyStrategy::MyStrategy()
 	, m_spawnPoint(nullptr)
 	, m_currentWaypointIndex(1) // [0] waypoint is for retreating only
 	, m_oldState()
+	, m_reasonableBonus(nullptr)
 {
 }
 
@@ -721,24 +804,30 @@ void State::updateBonuses()
 		m_world.getBuildings(), m_world.getWizards(), m_world.getMinions());
 
 	const auto& bonusUnits = m_world.getBonuses();
+	int thisTick = m_world.getTickIndex();
+
+	if (lastBonusSpawnTick() == 0)
+	{
+		for (BonusSpawn& bonusSpawn : m_bonuses)
+		{
+			bonusSpawn.m_state         = BonusSpawn::NO_BONUS;
+			bonusSpawn.m_lastCheckTick = thisTick;
+		}
+		return;
+	}
 
 	for (BonusSpawn& bonusSpawn : m_bonuses)
 	{
-		int bonusAppearancePeriod = m_game.getBonusAppearanceIntervalTicks();
-		bonusSpawn.m_nextSpawnTick = (1 + m_world.getTickCount() / bonusAppearancePeriod) + bonusAppearancePeriod;
+		const Point2D& spawnPoint = bonusSpawn.m_point;
 
-		if (m_world.getTickCount() < bonusAppearancePeriod)
+		if (bonusUnits.end() != std::find_if(bonusUnits.begin(), bonusUnits.end(), [&spawnPoint](const model::Bonus& b) {return spawnPoint == b; }))
 		{
-			bonusSpawn.m_state = BonusSpawn::NO_BONUS;
+			bonusSpawn.m_state = BonusSpawn::HAS_BONUS;
 		}
 		else
 		{
-			const Point2D& spawnPoint = bonusSpawn.m_point;
-			if (bonusUnits.end() != std::find_if(bonusUnits.begin(), bonusUnits.end(), [&spawnPoint](const model::Bonus& b) {return spawnPoint == b; }))
-			{
-				bonusSpawn.m_state = BonusSpawn::HAS_BONUS;
-			}
-			else
+			bool isStateUnknown = bonusSpawn.m_lastCheckTick < lastBonusSpawnTick() || bonusSpawn.m_state == BonusSpawn::UNKNOWN;
+			if (isStateUnknown || bonusSpawn.m_state == BonusSpawn::HAS_BONUS)
 			{
 				// if bonus spawn is visible but bonus is not, then there is no bonus, otherwise - bonus state is unknown
 				bool isVisible = teammates.end() != std::find_if(teammates.begin(), teammates.end(),
@@ -747,6 +836,8 @@ void State::updateBonuses()
 				bonusSpawn.m_state = isVisible ? BonusSpawn::NO_BONUS : BonusSpawn::UNKNOWN;
 			}
 		}
+
+		bonusSpawn.m_lastCheckTick = thisTick;
 	}
 }
 

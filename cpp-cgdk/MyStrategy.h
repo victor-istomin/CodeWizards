@@ -6,6 +6,8 @@
 #include "Strategy.h"
 #include "model/LaneType.h"
 #include "LineEquation.h"
+#include "Map.h"
+#include "PathFinder.h"
 
 #include <memory>
 #include <vector>
@@ -16,21 +18,21 @@
 
 struct BonusSpawn
 {
-	enum State
+	enum BonusState
 	{
 		UNKNOWN = 0,   // don't know whether there is a bonus
 		HAS_BONUS,
 		NO_BONUS,
 	};
 
-	Point2D m_point;
-	State   m_state;    // true if someone has collected bonus
-	int     m_nextSpawnTick;
+	Point2D    m_point;
+	BonusState m_state;          // true if someone has collected bonus
+	int        m_lastCheckTick;
 
 	static const size_t COUNT = 2;
 	static const Point2D RESPAWN_POINTS[];
 
-	BonusSpawn(const Point2D& point, State state) : m_point(point), m_state(state) {}
+	BonusSpawn(const Point2D& point, BonusState state) : m_point(point), m_state(state), m_lastCheckTick(0) {}
 };
 
 typedef std::array<BonusSpawn, BonusSpawn::COUNT> BonusSpawns;
@@ -66,6 +68,9 @@ struct State
 	State(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, const StorableState& m_oldState);
 	void updateProjectiles();
 	void updateBonuses();
+
+	int lastBonusSpawnTick() const { return (m_world.getTickIndex() / m_game.getBonusAppearanceIntervalTicks()) * m_game.getBonusAppearanceIntervalTicks(); }
+	int nextBonusSpawnTick() const { return lastBonusSpawnTick() + m_game.getBonusAppearanceIntervalTicks(); }
 
 	bool isReadyForAction(model::ActionType action) const              { return m_cooldownTicks[action] == 0; }
 	bool isGotStuck() const
@@ -123,6 +128,7 @@ private:
 
 	TWaypoints m_waypoints;
 	int        m_currentWaypointIndex;
+	const BonusSpawn* m_reasonableBonus;
 
 	int m_lastStrafeChangeTick;
 	double m_lastStrafe;
@@ -135,10 +141,14 @@ private:
 	Point2D getPreviousWaypoint();
 
 	const model::LivingUnit* getNearestTarget();
+	const BonusSpawn* getReasonableBonus();
 
 	// actions
 	void goTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage);
 	void retreatTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage);
+
+	Map::PointPath getSmoothPathTo(const Point2D& point, const Map* map, PathFinder::TilesPath& tiles);
+	double getPathLength(const Map::PointPath& path) const;
 
 	void tryDisengage(model::Move &move);
 

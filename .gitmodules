@@ -1,3 +1,6 @@
 [submodule "russian-ai-cup-visual"]
 	path = russian-ai-cup-visual
 	url = git@github.com:JustAMan/russian-ai-cup-visual.git
+[submodule "sparsepp"]
+	path = sparsepp
+	url = https://github.com/greg7mdp/sparsepp

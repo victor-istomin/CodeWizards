@@ -1,6 +1,8 @@
+#define _SECURE_SCL_DEPRECATE 0
 #include "PathFinder.h"
 #include <map>
 #include <unordered_set>
+
 
 PathFinder::PathFinder()
 {
@@ -42,9 +44,12 @@ PathFinder::TilesPath PathFinder::getPath(const Point2D& start, const Point2D& f
 	Timer timer(__FUNCTION__);
 
 	using TileIndex = Map::TileIndex;
+	using spp::sparse_hash_map;
+	using spp::sparse_hash_set;
 
-	typedef std::unordered_set<TileIndex, TileIndex::Hasher> IndexSet;
-	typedef std::multimap<double/*cost*/, TileIndex>         CostMap;
+	typedef sparse_hash_set<TileIndex, TileIndex::Hasher> IndexSet;
+	//typedef std::unordered_set<TileIndex, TileIndex::Hasher> IndexSet;
+	typedef std::multimap<double/*cost*/, TileIndex>      CostMap;
 
 	TilesPath path;
 	const TileIndex startIdx = map.getTileIndex(start);
