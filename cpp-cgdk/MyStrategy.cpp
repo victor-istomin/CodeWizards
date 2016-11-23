@@ -665,7 +665,7 @@ double MyStrategy::getSafeDistance(const model::Unit& enemy)
 
 	// TODO - carefully test condition when enemy-attack-range < distance < exp-getting-radius
 	if (getWizard(&enemy))
-		safeDistance = getWizard(&enemy)->getCastRange() + selfRadius;
+		safeDistance = getWizard(&enemy)->getCastRange() + selfRadius + 2 * m_state->m_game.getWizardForwardSpeed();
 
 	const model::Minion* minion = getMinion(&enemy);
 	if (minion)
