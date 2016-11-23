@@ -59,7 +59,6 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 
 	const LivingUnit* nearestTarget = getNearestTarget();
 
-	/**/
 	auto dangerousEnemies = filterPointers<const model::Unit*>(
 		[&self, this](const model::Unit& u) {return isEnemy(u) && self.getDistanceTo(u) < getSafeDistance(u); },
 		world.getBuildings(), world.getWizards(), world.getMinions());
@@ -75,10 +74,6 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 	{
 		m_state->m_isLowHP = true;  // this also activates "don't retreat too far" feature
 	}
-	/**/
-
-	// double tooCloseDistance = 3 * game.getStaffRange() + self.getRadius() + (m_state->m_isLowHP ? game.getStaffRange() : 0);
-	// bool isTooCloseToEnemy = nearestTarget && self.getDistanceTo(*nearestTarget) < tooCloseDistance;
 
 	// Если осталось мало жизненной энергии, отступаем к предыдущей ключевой точке на линии.
 	bool isRetreating = isTooCloseToEnemy || m_state->m_isLowHP;
@@ -108,7 +103,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 			move.setTurn(angle);
 
 			bool isWizard = getWizard(nearestTarget);
-			if (isWizard)
+			if (isWizard && !isRetreating)
 			{
 				// might escape. This is workaround
 				double enenyAngle = nearestTarget->getAngleTo(self);
@@ -207,6 +202,8 @@ bool MyStrategy::isUnitSeeing(const model::Unit* unit, const Point2D& point)
 ///////////////////////////////////////////////////////////////////////////
 void MyStrategy::initialSetup()
 {
+	// TODO - add some waypoints to TOP/BOTTOM lane to avoid going out of lane like in game# 42857
+
 	m_spawnPoint = std::make_unique<Point2D>(m_state->m_self);
 
 	m_pathFinder = std::make_unique<PathFinder>();
@@ -541,14 +538,19 @@ void MyStrategy::goTo(const Point2D& point, model::Move& move, DebugMessage& deb
 
 	if (abs(angle) < m_state->m_game.getStaffSector() / 4.0)
 	{
-		move.setSpeed(forwardSpeed);
+		Vec2d vect = Vec2d(forwardSpeed * std::cos(angle), forwardSpeed * std::sin(angle));
+		Vec2d alt = getAlternateMoveVector(vect);
+		move.setSpeed(alt.m_x);
+		move.setStrafeSpeed(alt.m_y);
 	}
 	else
 	{
 		double angleTo = m_state->m_self.getAngleTo(target.m_x, target.m_y);
 		Vec2d vect = Vec2d(forwardSpeed * std::cos(angleTo), forwardSpeed * std::sin(angleTo));
-		move.setSpeed(vect.m_x);
-		move.setStrafeSpeed(vect.m_y);
+
+		Vec2d alt = getAlternateMoveVector(vect);
+		move.setSpeed(alt.m_x);
+		move.setStrafeSpeed(alt.m_y);
 	}
 
 	tryDisengage(move);
@@ -612,8 +614,10 @@ void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage
 	const double speed = 4.0; // todo - remove magic constant
 	double angleTo = m_state->m_self.getAngleTo(target.m_x, target.m_y);
 	Vec2d vect = Vec2d(speed * std::cos(angleTo), speed * std::sin(angleTo));
-	move.setSpeed(vect.m_x);
-	move.setStrafeSpeed(vect.m_y);
+
+	Vec2d alt = getAlternateMoveVector(vect);
+	move.setSpeed(alt.m_x);
+	move.setStrafeSpeed(alt.m_y);
 
 	tryDisengage(move);
 }
@@ -665,7 +669,7 @@ double MyStrategy::getSafeDistance(const model::Unit& enemy)
 
 	// TODO - carefully test condition when enemy-attack-range < distance < exp-getting-radius
 	if (getWizard(&enemy))
-		safeDistance = getWizard(&enemy)->getCastRange() + selfRadius;
+		safeDistance = getWizard(&enemy)->getCastRange() + selfRadius + 2 * m_state->m_game.getWizardForwardSpeed();
 
 	const model::Minion* minion = getMinion(&enemy);
 	if (minion)
@@ -703,6 +707,84 @@ double MyStrategy::getMaxDamage(const model::Unit* u) const
 
 	assert(false && "unknown unit type");
 	return m_state->m_game.getMagicMissileDirectDamage();
+}
+
+//////////////////////////////////////////////////////////////////////////
+//
+// Method:
+//
+// Desc:
+//
+// Params:
+//
+// Return:
+//
+///////////////////////////////////////////////////////////////////////////
+Vec2d MyStrategy::getAlternateMoveVector(const Vec2d& suggestion)
+{
+	Timer timer(__FUNCTION__);
+
+	const model::Wizard& self = m_state->m_self;
+	const model::World& world = m_state->m_world;
+	const Point2D selfPoint = self;
+
+	const double LOOKUP_DISTANCE = m_state->m_game.getWizardRadius() * 3;
+
+	auto obstacles = filterPointers<const model::CircularUnit*>([&selfPoint, &LOOKUP_DISTANCE, &self](const model::CircularUnit& u)
+		{ return self.getId() != u.getId() && selfPoint.getDistanceTo(u) < LOOKUP_DISTANCE; }
+		, world.getWizards(), world.getMinions(), world.getBuildings(), world.getTrees());     // TODO - add non-traversable tiles too?
+
+
+	const Point2D worldTopleft     = Point2D(self.getRadius(), self.getRadius());
+	const Point2D worldBottomRight = Point2D(m_state->m_world.getWidth() - self.getRadius(), m_state->m_world.getHeight() - self.getRadius());
+
+	auto isVectorValid = [&obstacles, &self, &worldTopleft, &worldBottomRight](const Vec2d& v)
+	{
+		Vec2d absDirection = Vec2d(v).rotate(self.getAngle());
+		Vec2d newPosition  = absDirection.normalize() * self.getRadius() + absDirection;
+		Vec2d worldVector  = newPosition + Vec2d::fromPoint<Point2D>(self);
+
+		if (worldVector.m_x < worldTopleft.m_x || worldVector.m_x > worldBottomRight.m_x || worldVector.m_y < worldTopleft.m_y || worldVector.m_y > worldBottomRight.m_y)
+		{
+			return false;
+		}
+
+		return obstacles.end() == std::find_if(obstacles.begin(), obstacles.end(), [&worldVector, &self](const model::CircularUnit* obstacle)
+		{
+			return Map::isSectionIntersects(self, worldVector.toPoint<Point2D>(), *obstacle, obstacle->getRadius() + self.getRadius());
+		});
+	};
+
+	if (isVectorValid(suggestion))
+		return suggestion;
+
+	static const int    ALTERNATIVES_COUNT = 180;
+	static const double MAX_DEVIATION = PI / 2 + PI / 8;
+	static const double STEP = 2 * MAX_DEVIATION / ALTERNATIVES_COUNT;
+
+	std::vector<Vec2d> alternatives;
+	alternatives.reserve(ALTERNATIVES_COUNT);
+
+	for (double angle = -MAX_DEVIATION; angle < +MAX_DEVIATION; angle += STEP)
+	{
+		Vec2d rotated = Vec2d(suggestion).rotate(angle);
+		if (isVectorValid(rotated))
+		{
+			alternatives.push_back(rotated);
+		}
+	}
+
+	std::sort(alternatives.begin(), alternatives.end(), 
+		[&suggestion](const Vec2d& a, const Vec2d& b) { return std::abs(Vec2d::angleBetween(suggestion, a)) < std::abs(Vec2d::angleBetween(suggestion, b)); });
+
+	if (alternatives.empty())
+	{
+		return suggestion;
+	}
+	else
+	{
+		return alternatives.front();
+	}
 }
 
 MyStrategy::MyStrategy()
