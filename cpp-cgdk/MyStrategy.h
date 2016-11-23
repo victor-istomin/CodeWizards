@@ -169,6 +169,8 @@ private:
 
 	bool isEnemy(const model::Unit& u) const  { return u.getFaction() != model::FACTION_NEUTRAL && u.getFaction() != m_state->m_self.getFaction(); }
 
+	Vec2d getAlternateMoveVector(const Vec2d& suggestion);
+
 public:
     MyStrategy();
 

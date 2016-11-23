@@ -34,13 +34,15 @@ public:
 
 	Vec2d& set(double x, double y) { m_x = x; m_y = y; return *this; }
 
-	Vec2d& rotate(double deg)
+	Vec2d& rotate(double radians)
 	{
-		double theta = deg / 180.0 * PI;
-		double c = cos(theta);
-		double s = sin(theta);
-		m_x = m_x * c - m_y * s;
-		m_y = m_x * s + m_y * c;
+		double c = cos(radians);
+		double s = sin(radians);
+
+		double x = m_x, y = m_y;
+
+		m_x = x * c - y * s;
+		m_y = x * s + y * c;
 
 		return *this;
 	}

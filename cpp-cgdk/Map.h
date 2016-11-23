@@ -144,6 +144,30 @@ public:
 		return smoothPath;
 	}
 
+	static bool isSectionIntersects(const Point2D& from, const Point2D& to, const Point2D& unitCenter, double unitRadius)
+	{
+		// coordinates are relative to unit's center
+		Point2D fromRelative = from - unitCenter;
+		Point2D toRelative = to - unitCenter;
+		Point2D d = toRelative - fromRelative;
+
+		double a = d.m_x * d.m_x + d.m_y * d.m_y;
+		double b = 2.0 *(fromRelative.m_x * d.m_x + fromRelative.m_y * d.m_y);
+		double c = fromRelative.m_x * fromRelative.m_x + fromRelative.m_y * fromRelative.m_y - unitRadius * unitRadius;
+
+		bool isIntersects = false;
+
+		if (-b < 0)
+			isIntersects = (c < 0);
+		else if (-b < (2.0 * a))
+			isIntersects = ((4.*a*c - b*b) < 0);
+
+		if (!isIntersects)
+			isIntersects = (a + b + c < 0);
+
+		return isIntersects;
+	}
+
 private:
 	TilesMatrix m_tilesYX;
 	size_t      m_tileSize;
@@ -230,31 +254,7 @@ protected:
 		return cornerDistance <= radius;
 	}
 
-	static bool isSectionIntersects(const Point2D& from, const Point2D& to, const Point2D& unitCenter, double unitRadius)
-	{
-		// coordinates are relative to unit's center
-		Point2D fromRelative = from - unitCenter;
-		Point2D toRelative   = to - unitCenter;
-		Point2D d = toRelative - fromRelative;
 
-		double a = d.m_x * d.m_x + d.m_y * d.m_y;
-		double b = 2.0 *(fromRelative.m_x * d.m_x + fromRelative.m_y * d.m_y);
-		double c = fromRelative.m_x * fromRelative.m_x + fromRelative.m_y * fromRelative.m_y - unitRadius * unitRadius;
-
-		bool isIntersects = false;
-
-		if (-b < 0)
-			isIntersects = (c < 0);
-		else if (-b < (2.0 * a))
-			isIntersects = ((4.*a*c - b*b) < 0);
-
-		if (!isIntersects)
-			isIntersects = (a + b + c < 0);
-
-		return isIntersects;
-	}
-
-	
 	// cast a ray 'from' -> 'to'
 	// variant of "A Fast Voxel Traversal Algorithm for Ray Tracing"
 	// http://www.cse.yorku.ca/~amana/research/grid.pdf
