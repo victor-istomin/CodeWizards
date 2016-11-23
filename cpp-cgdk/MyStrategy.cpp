@@ -26,7 +26,9 @@ Point2D MyStrategy::MID_GUARD_POINT    = Point2D(2000 + 200, 2000 + 200);
 Point2D MyStrategy::TOP_GUARD_POINT    = Point2D(35, 2000 - 400 + 35);
 Point2D MyStrategy::BOTTOM_GUARD_POINT = Point2D(2000 + 400 - 35, 4000 - 400 + 35);
 
+// order is importand due to handicap
 const Point2D BonusSpawn::RESPAWN_POINTS[] = { Point2D(4000 * 0.3, 4000 * 0.3), Point2D(4000 * 0.7, 4000 * 0.7) };
+const double  BonusSpawn::DANGER_HANDICAP = 200;
 
 // TODO - remove this from globals!
 MyStrategy::TWaypointsMap MyStrategy::g_waypointsMap;
@@ -426,7 +428,7 @@ const model::LivingUnit* MyStrategy::getNearestTarget()
 
 const BonusSpawn* MyStrategy::getReasonableBonus()
 {
-	const double MAX_TRAVEL_DISTANCE = m_state->m_game.getWizardVisionRange() * 3;
+	const double MAX_TRAVEL_DISTANCE = m_state->m_game.getWizardVisionRange() * 3 + BonusSpawn::DANGER_HANDICAP;
 
 	const model::Wizard& self = m_state->m_self;
 	const int thisTick = m_state->m_world.getTickIndex();
@@ -440,7 +442,8 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 		const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
 		Map::PointPath path = getSmoothPathTo(spawn.m_point, map, tiles);
 
-		double currentDistance = getPathLength(path);
+		double currentDistance = getPathLength(path) + spawn.m_dangerHandicap;
+
 		if (currentDistance < MAX_TRAVEL_DISTANCE
 			&& (nearest == nullptr || currentDistance < minPathDistance)
 			&& spawn.m_teamateCompetitors == 0)   // not too reasonable to compete with teammate

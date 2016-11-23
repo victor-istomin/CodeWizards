@@ -29,11 +29,13 @@ struct BonusSpawn
 	BonusState m_state;          // true if someone has collected bonus
 	int        m_lastCheckTick;
 	int        m_teamateCompetitors;
+	double     m_dangerHandicap;
 
-	static const size_t COUNT = 2;
+	static const size_t  COUNT = 2;
 	static const Point2D RESPAWN_POINTS[];
+	static const double  DANGER_HANDICAP;
 
-	BonusSpawn(const Point2D& point, BonusState state) : m_point(point), m_state(state), m_lastCheckTick(0) {}
+	BonusSpawn(const Point2D& point, BonusState state, double handicap = 0) : m_point(point), m_state(state), m_lastCheckTick(0), m_dangerHandicap(handicap) {}
 };
 
 typedef std::array<BonusSpawn, BonusSpawn::COUNT> BonusSpawns;
@@ -45,7 +47,8 @@ struct StorableState
 
 	StorableState() 
 		: m_previousMove()
-		, m_bonuses{ BonusSpawn(BonusSpawn::RESPAWN_POINTS[0], BonusSpawn::NO_BONUS), BonusSpawn(BonusSpawn::RESPAWN_POINTS[1], BonusSpawn::NO_BONUS) }
+		, m_bonuses{ BonusSpawn(BonusSpawn::RESPAWN_POINTS[0], BonusSpawn::NO_BONUS, BonusSpawn::DANGER_HANDICAP),   // because it's closer to enemy's tower on mid lane
+					 BonusSpawn(BonusSpawn::RESPAWN_POINTS[1], BonusSpawn::NO_BONUS) }
 	{}
 };
 
