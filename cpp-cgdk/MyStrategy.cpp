@@ -108,7 +108,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 			move.setTurn(angle);
 
 			bool isWizard = getWizard(nearestTarget);
-			if (isWizard)
+			if (isWizard && !isRetreating)
 			{
 				// might escape. This is workaround
 				double enenyAngle = nearestTarget->getAngleTo(self);
