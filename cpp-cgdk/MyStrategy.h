@@ -28,6 +28,7 @@ struct BonusSpawn
 	Point2D    m_point;
 	BonusState m_state;          // true if someone has collected bonus
 	int        m_lastCheckTick;
+	int        m_teamateCompetitors;
 
 	static const size_t COUNT = 2;
 	static const Point2D RESPAWN_POINTS[];
@@ -48,9 +49,12 @@ struct StorableState
 	{}
 };
 
+class MyStrategy;
 struct State
 {
 	static const double LOW_HP_FACTOR;
+
+	typedef std::vector<const model::Unit*> PointsVector;
 
 	const model::Wizard& m_self;
 	const model::World&  m_world;
@@ -58,6 +62,7 @@ struct State
 	const model::Move&   m_move;
 	const StorableState& m_storedState;
 	BonusSpawns          m_bonuses;
+	const MyStrategy*    m_strategy;
 
 	bool m_isUnderMissile;
 	bool m_isLowHP;
@@ -65,7 +70,7 @@ struct State
 
 	std::array<int, model::_ACTION_COUNT_> m_cooldownTicks;
 
-	State(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, const StorableState& m_oldState);
+	State(const MyStrategy* strategy, const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, const StorableState& m_oldState);
 	void updateProjectiles();
 	void updateBonuses();
 
@@ -152,10 +157,6 @@ private:
 
 	void tryDisengage(model::Move &move);
 
-	static auto getWizard(const model::Unit* unit)   { return dynamic_cast<const model::Wizard*>(unit); }
-	static auto getMinion(const model::Unit* unit)   { return dynamic_cast<const model::Minion*>(unit); }
-	static auto getBuilding(const model::Unit* unit) { return dynamic_cast<const model::Building*>(unit); }
-
 	double getSafeDistance(const model::Unit& enemy);
 
 	double getMaxDamage(const model::Unit* u) const;
@@ -168,6 +169,10 @@ public:
     MyStrategy();
 
     void move(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move) override;
+
+	static auto getWizard(const model::Unit* unit)   { return dynamic_cast<const model::Wizard*>(unit); }
+	static auto getMinion(const model::Unit* unit)   { return dynamic_cast<const model::Minion*>(unit); }
+	static auto getBuilding(const model::Unit* unit) { return dynamic_cast<const model::Building*>(unit); }
 
 	static bool isUnitSeeing(const model::Unit* unit, const Point2D& point);
 };

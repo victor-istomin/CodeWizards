@@ -275,7 +275,7 @@ void MyStrategy::initialSetup()
 ///////////////////////////////////////////////////////////////////////////
 void MyStrategy::initState(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move)
 {
-	m_state = std::make_unique<State>(self, world, game, move, m_oldState);
+	m_state = std::make_unique<State>(this, self, world, game, move, m_oldState);
 
 	if (m_waypoints.empty())
 	{
@@ -442,7 +442,8 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 
 		double currentDistance = getPathLength(path);
 		if (currentDistance < MAX_TRAVEL_DISTANCE
-			&& (nearest == nullptr || currentDistance < minPathDistance))
+			&& (nearest == nullptr || currentDistance < minPathDistance)
+			&& spawn.m_teamateCompetitors == 0)   // not too reasonable to compete with teammate
 		{
 			nearest = &spawn;
 			minPathDistance = currentDistance;
@@ -458,7 +459,7 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 
 		if (timeToAppear < eta && eta < MAX_TRAVEL_TIME)
 		{
-			const double WAIT_DISTANCE = self.getRadius() * 3;
+			const double WAIT_DISTANCE = self.getRadius() * 2.5;
 			if (distance < WAIT_DISTANCE && nearest->m_state == BonusSpawn::NO_BONUS)
 			{
 				static BonusSpawn hack = BonusSpawn(*nearest);
@@ -689,7 +690,7 @@ MyStrategy::MyStrategy()
 {
 }
 
-State::State(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, const StorableState& oldState) 
+State::State(const MyStrategy* strategy, const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, const StorableState& oldState)
 	: m_self(self), m_world(world), m_game(game), m_move(move)
 	, m_isUnderMissile(false)
 	, m_isLowHP(false)
@@ -697,6 +698,7 @@ State::State(const model::Wizard& self, const model::World& world, const model::
 	, m_isGoingToBonus(false)
 	, m_storedState(oldState)
 	, m_bonuses(oldState.m_bonuses)
+	, m_strategy(strategy)
 {
 	const auto& wizards = m_world.getWizards();
 	const Point2D selfPoint = self;
@@ -805,6 +807,18 @@ void State::updateBonuses()
 
 	const auto& bonusUnits = m_world.getBonuses();
 	int thisTick = m_world.getTickIndex();
+
+	for (BonusSpawn& spawn : m_bonuses)
+	{
+		const double NEAR_DISTANCE = std::min(m_game.getWizardRadius() * 4, spawn.m_point.getDistanceTo(m_self));
+		spawn.m_teamateCompetitors = std::count_if(teammates.begin(), teammates.end(), [&spawn, this, NEAR_DISTANCE](const model::Unit* u)
+		{ 
+			auto wizard = m_strategy->getWizard(u); 
+			return wizard 
+				&& wizard->getId() != m_self.getId() 
+				&& spawn.m_point.getDistanceTo(*wizard) < NEAR_DISTANCE;
+		});
+	}
 
 	if (lastBonusSpawnTick() == 0)
 	{
