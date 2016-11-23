@@ -22,7 +22,7 @@ using namespace std;
 
 const double MyStrategy::WAYPOINT_RADIUS = 150.0;
 
-Point2D MyStrategy::MID_GUARD_POINT    = Point2D(2000 - 400, 2000 + 200);
+Point2D MyStrategy::MID_GUARD_POINT    = Point2D(2000 + 200, 2000 + 200);
 Point2D MyStrategy::TOP_GUARD_POINT    = Point2D(35, 2000 - 400 + 35);
 Point2D MyStrategy::BOTTOM_GUARD_POINT = Point2D(2000 + 400 - 35, 4000 - 400 + 35);
 
@@ -199,14 +199,14 @@ void MyStrategy::initialSetup()
 	double mapSize = m_state->m_game.getMapSize();
 	double wizardSize = m_state->m_self.getRadius();
 
-	MyStrategy::MID_GUARD_POINT = Point2D(mapSize * 0.5 - 400, mapSize * 0.5 + 200);
+	MyStrategy::MID_GUARD_POINT = Point2D(mapSize * 0.5 - 150, mapSize * 0.5 + 280);
 	g_waypointsMap[LaneType::LANE_MIDDLE] = TWaypoints
 	{ 
 		Point2D(100.0, mapSize - 100.0),
 //		Point2D(600.0, mapSize - 200.0),
 		Point2D(800.0, mapSize - 800.0),
 		MID_GUARD_POINT,
-		Point2D(2400.0, 1600.0),
+		Point2D(2400.0, 1500.0),
 		Point2D(mapSize - 100.0, 100.0),
 	};
 
