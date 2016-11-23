@@ -722,6 +722,8 @@ double MyStrategy::getMaxDamage(const model::Unit* u) const
 ///////////////////////////////////////////////////////////////////////////
 Vec2d MyStrategy::getAlternateMoveVector(const Vec2d& suggestion)
 {
+	Timer timer(__FUNCTION__);
+
 	const model::Wizard& self = m_state->m_self;
 	const model::World& world = m_state->m_world;
 	const Point2D selfPoint = self;
@@ -756,13 +758,14 @@ Vec2d MyStrategy::getAlternateMoveVector(const Vec2d& suggestion)
 	if (isVectorValid(suggestion))
 		return suggestion;
 
-	static const int    ALTERNATIVES_COUNT = 32;
-	static const double STEP = PI / ALTERNATIVES_COUNT;
+	static const int    ALTERNATIVES_COUNT = 180;
+	static const double MAX_DEVIATION = PI / 2 + PI / 8;
+	static const double STEP = 2 * MAX_DEVIATION / ALTERNATIVES_COUNT;
 
 	std::vector<Vec2d> alternatives;
 	alternatives.reserve(ALTERNATIVES_COUNT);
 
-	for (double angle = -PI / 2; angle < +PI / 2; angle += STEP)
+	for (double angle = -MAX_DEVIATION; angle < +MAX_DEVIATION; angle += STEP)
 	{
 		Vec2d rotated = Vec2d(suggestion).rotate(angle);
 		if (isVectorValid(rotated))
