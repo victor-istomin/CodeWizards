@@ -67,9 +67,10 @@ struct State
 	BonusSpawns          m_bonuses;
 	const MyStrategy*    m_strategy;
 
-	bool m_isUnderMissile;
-	bool m_isLowHP;
-	bool m_isGoingToBonus;  // not yet implemented, always false
+	double m_estimatedHP;
+	bool   m_isUnderMissile;
+	bool   m_isLowHP;
+	bool   m_isGoingToBonus;  // not yet implemented, always false
 
 	std::array<int, model::_ACTION_COUNT_> m_cooldownTicks;
 

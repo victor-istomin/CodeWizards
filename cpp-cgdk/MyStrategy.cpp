@@ -55,10 +55,8 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
  		debugMessage.visualizeMap(map);
 		debugMessage.visualizeWaypoints(g_waypointsMap);
 		debugMessage.visualizeBonuses(m_state->m_bonuses);
-// 		std::cout << "Path size: " << path.size() << std::endl;
 	}
 
-	// TODO - remove dirty hack inside !!!
 	const LivingUnit* nearestTarget = getNearestTarget();
 
 	/**/
@@ -73,7 +71,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 		[this](const Unit* u) { return getMinion(u) != nullptr && getMinion(u)->getType() == model::MINION_ORC_WOODCUTTER; });
 
 	bool isTooCloseToEnemy = isNearOrk || self.getLife() < totalEnemiesDamage;
-	if (self.getLife() < totalEnemiesDamage)
+	if (m_state->m_estimatedHP < totalEnemiesDamage)
 	{
 		m_state->m_isLowHP = true;  // this also activates "don't retreat too far" feature
 	}
@@ -108,6 +106,23 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 
 			// ... то поворачиваемся к цели.
 			move.setTurn(angle);
+
+			bool isWizard = getWizard(nearestTarget);
+			if (isWizard)
+			{
+				// might escape. This is workaround
+				double enenyAngle = nearestTarget->getAngleTo(self);
+				if (std::abs(enenyAngle) > game.getStaffSector())
+				{
+					double ticksToTurn = 1 + (std::abs(enenyAngle) - game.getStaffSector()) / game.getWizardMaxTurnAngle();
+					double desiredDistance = self.getCastRange() - ticksToTurn * game.getWizardStrafeSpeed();
+
+					if (self.getDistanceTo(*nearestTarget) > desiredDistance)
+					{
+						goTo(*nearestTarget, move, debugMessage);
+					}
+				}
+			}
 
 			// Если цель перед нами, ...
 			if (m_state->isReadyForAction(ActionType::ACTION_MAGIC_MISSILE))
@@ -366,14 +381,11 @@ Point2D MyStrategy::getPreviousWaypoint()
 ///////////////////////////////////////////////////////////////////////////
 const model::LivingUnit* MyStrategy::getNearestTarget()
 {
-	std::list<LivingUnit> targets;
-
 	const World& world = m_state->m_world;
 	const Wizard& self = m_state->m_self;
 
-	std::copy(world.getBuildings().begin(), world.getBuildings().end(), std::back_inserter(targets));
-	std::copy(world.getWizards().begin(), world.getWizards().end(), std::back_inserter(targets));
-	std::copy(world.getMinions().begin(), world.getMinions().end(), std::back_inserter(targets));
+	auto targets = filterPointers<const model::LivingUnit*>([&self](const model::LivingUnit& u) { return u.getFaction() != self.getFaction(); },
+		world.getBuildings(), world.getWizards(), world.getMinions());
 
 	const LivingUnit* nearestTarget = nullptr;
 
@@ -381,49 +393,42 @@ const model::LivingUnit* MyStrategy::getNearestTarget()
 	int minEnemyHealth = std::numeric_limits<int>::max();
 	int maxEnemyHealth = std::numeric_limits<int>::min();
 
-	for (const LivingUnit& target : targets)
+	for (const LivingUnit* target : targets)
 	{
-		if (target.getFaction() == Faction::FACTION_NEUTRAL || target.getFaction() == self.getFaction())
+		if (target->getFaction() == Faction::FACTION_NEUTRAL)
 		{
 			continue;
 		}
 
-		minEnemyHealth = std::min(minEnemyHealth, target.getLife());
-		maxEnemyHealth = std::max(maxEnemyHealth, target.getLife());
+		minEnemyHealth = std::min(minEnemyHealth, target->getLife());
+		maxEnemyHealth = std::max(maxEnemyHealth, target->getLife());
 	}
 
-	for (const LivingUnit& target : targets) 
+	for (const LivingUnit* target : targets) 
 	{
-		if (target.getFaction() == Faction::FACTION_NEUTRAL || target.getFaction() == self.getFaction()) 
+		if (target->getFaction() == Faction::FACTION_NEUTRAL)
 		{
 			continue;
 		}
 
-		double distance =  self.getDistanceTo(target);
-		if (target.getLife() == minEnemyHealth)
+		double distance =  self.getDistanceTo(*target);
+		if (target->getLife() == minEnemyHealth)
 		{
 			distance /= 2;  // this is priority hack
 		}
-		if (target.getLife() == maxEnemyHealth)
+		if (target->getLife() == maxEnemyHealth)
 		{
 			distance *= 1.5;  // this is priority hack
 		}
 
 		if (distance < nearestTargetDistance) 
 		{
-			nearestTarget = &target;
+			nearestTarget = target;
 			nearestTargetDistance = distance;
 		}
 	}
 
-	static LivingUnit dirtyHack = m_state->m_self;   // TODO: remove this hack !!!
-	if(nearestTarget != nullptr)
-	{ 
-		dirtyHack = *nearestTarget;
-		return &dirtyHack;
-	}
-
-	return nullptr;
+	return nearestTarget;
 }
 
 const BonusSpawn* MyStrategy::getReasonableBonus()
@@ -454,6 +459,7 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 	}
 
 	const double MAX_TRAVEL_TIME = std::min(400, m_state->m_world.getTickCount() - m_state->m_world.getTickIndex());
+
 	if (nearest != nullptr && minPathDistance < MAX_TRAVEL_DISTANCE)
 	{
 		double distance = nearest->m_point.getDistanceTo(self);
@@ -527,14 +533,31 @@ void MyStrategy::goTo(const Point2D& point, model::Move& move, DebugMessage& deb
 
 	move.setTurn(angle);
 
+	auto statuses = m_state->m_self.getStatuses();
+	bool isHastened = statuses.end() != std::find_if(statuses.begin(), statuses.end(), [](const model::Status& s) { return s.getType() == model::STATUS_HASTENED; });
+	double forwardSpeed = m_state->m_game.getWizardForwardSpeed();
+	if (isHastened)
+		forwardSpeed += forwardSpeed * m_state->m_game.getHastenedMovementBonusFactor();
+
 	if (abs(angle) < m_state->m_game.getStaffSector() / 4.0)
-		move.setSpeed(m_state->m_game.getWizardForwardSpeed());
+	{
+		move.setSpeed(forwardSpeed);
+	}
+	else
+	{
+		double angleTo = m_state->m_self.getAngleTo(target.m_x, target.m_y);
+		Vec2d vect = Vec2d(forwardSpeed * std::cos(angleTo), forwardSpeed * std::sin(angleTo));
+		move.setSpeed(vect.m_x);
+		move.setStrafeSpeed(vect.m_y);
+	}
 
 	tryDisengage(move);
 }
 
 void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage)
 {
+	bool isToBonus = m_reasonableBonus != nullptr && m_reasonableBonus->m_point == point;
+
 	if (m_state->m_isLowHP)
 	{
 		const model::Wizard& self  = m_state->m_self;
@@ -564,8 +587,9 @@ void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage
 		std::for_each(world.getMinions().begin(), world.getMinions().end(),     findNearestEnemy);
 		std::for_each(world.getBuildings().begin(), world.getBuildings().end(), findNearestEnemy);
 
-		if (enemy == nullptr || enemy->getDistanceTo(self) > getSafeDistance(*enemy))
-			return;  // don't retreat too far
+		bool isAlreadySafe = enemy == nullptr || enemy->getDistanceTo(self) > getSafeDistance(*enemy);
+		if (isAlreadySafe && !isToBonus)
+			return;  // don't retreat too far, except getting a bonus
 	}
 
 	double forwardAngle = m_state->m_self.getAngleTo(point.m_x, point.m_y);
@@ -702,19 +726,23 @@ State::State(const MyStrategy* strategy, const model::Wizard& self, const model:
 	, m_storedState(oldState)
 	, m_bonuses(oldState.m_bonuses)
 	, m_strategy(strategy)
+	, m_estimatedHP(self.getLife())
 {
 	const auto& wizards = m_world.getWizards();
 	const Point2D selfPoint = self;
 
-	m_isLowHP = self.getLife() < (self.getMaxLife() * State::LOW_HP_FACTOR);
+	updateProjectiles(); // is under missile calculation
+	updateBonuses();
+
+	// todo: take into account all missiles
+	m_estimatedHP -= 0; // TODO - not yet ready     //m_isUnderMissile ? game.getMagicMissileDirectDamage() : 0;
+	m_isLowHP      = m_estimatedHP < (self.getMaxLife() * State::LOW_HP_FACTOR);
 
 	// set cooldown ticks, taking into account both specific and common cooldown
 	std::copy(self.getRemainingCooldownTicksByAction().begin(), self.getRemainingCooldownTicksByAction().end(), m_cooldownTicks.begin());
 	std::transform(m_cooldownTicks.begin(), m_cooldownTicks.end(), m_cooldownTicks.begin(),
 		[&self](int cooldown) { return std::max(cooldown, self.getRemainingActionCooldownTicks()); });
 
-	updateProjectiles();
-	updateBonuses();
 }
 
 //////////////////////////////////////////////////////////////////////////
