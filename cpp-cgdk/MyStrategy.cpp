@@ -83,7 +83,25 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 
 		Point2D previousWaypoint = getPreviousWaypoint();
 		if (m_reasonableBonus)
-			previousWaypoint = m_reasonableBonus->m_point;
+		{
+			bool canGet = !m_state->m_isLowHP;
+			if (m_state->m_isLowHP)
+			{
+				const Point2D& nextPathPoint = m_reasonableBonus->m_smoothPathCache.empty() ? m_reasonableBonus->m_point : m_reasonableBonus->m_smoothPathCache.front();
+				auto enemies = filterPointers<const model::Unit*>([this](const model::Unit& u) {return isEnemy(u); }, world.getBuildings(), world.getWizards(), world.getMinions());
+
+				bool noEnemiesThatWay = enemies.end() == std::find_if(enemies.begin(), enemies.end(), 
+					[&nextPathPoint, &self](const model::Unit* enemy) 
+				{
+					return std::abs(self.getAngleTo(*enemy) - self.getAngleTo(nextPathPoint.m_x, nextPathPoint.m_y)) > (PI / 2);
+				});
+
+				canGet = noEnemiesThatWay;
+			}
+
+			if (canGet)
+				previousWaypoint = m_reasonableBonus->m_point;
+		}
 
 		retreatTo(previousWaypoint, move, debugMessage);
 		debugMessage.setNextWaypoint(previousWaypoint);
@@ -438,13 +456,13 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 	const BonusSpawn* nearest = nullptr;
 	double minPathDistance = std::numeric_limits<double>::infinity();
 
-	for (const BonusSpawn& spawn : m_state->m_bonuses)
+	for (BonusSpawn& spawn : m_state->m_bonuses)
 	{
 		PathFinder::TilesPath tiles;
 		const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
-		Map::PointPath path = getSmoothPathTo(spawn.m_point, map, tiles);
+		spawn.m_smoothPathCache = getSmoothPathTo(spawn.m_point, map, tiles);
 
-		double currentDistance = getPathLength(path) + spawn.m_dangerHandicap;
+		double currentDistance = getPathLength(spawn.m_smoothPathCache) + spawn.m_dangerHandicap;
 
 		if (currentDistance < MAX_TRAVEL_DISTANCE
 			&& (nearest == nullptr || currentDistance < minPathDistance)

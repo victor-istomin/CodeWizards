@@ -31,6 +31,8 @@ struct BonusSpawn
 	int        m_teamateCompetitors;
 	double     m_dangerHandicap;
 
+	Map::PointPath m_smoothPathCache;
+
 	static const size_t  COUNT = 2;
 	static const Point2D RESPAWN_POINTS[];
 	static const double  DANGER_HANDICAP;
