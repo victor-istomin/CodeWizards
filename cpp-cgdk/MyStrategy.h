@@ -3,6 +3,10 @@
 #ifndef _MY_STRATEGY_H_
 #define _MY_STRATEGY_H_
 
+#ifndef _DEBUG
+#define NDEBUG
+#endif
+
 #include "Strategy.h"
 #include "model/LaneType.h"
 #include "LineEquation.h"

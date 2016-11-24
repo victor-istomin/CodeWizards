@@ -538,6 +538,7 @@ void MyStrategy::goTo(const Point2D& point, model::Move& move, DebugMessage& deb
 	debugMessage.setNextWaypoint(point);
 	debugMessage.visualizePath(path, map);
 
+	// this may occur when navigating to the enemy in occupied cell
 	assert(!smoothPath.empty());
 	if (!smoothPath.empty())
 	{
@@ -752,6 +753,26 @@ Vec2d MyStrategy::getAlternateMoveVector(const Vec2d& suggestion)
 		{ return self.getId() != u.getId() && selfPoint.getDistanceTo(u) < LOOKUP_DISTANCE; }
 		, world.getWizards(), world.getMinions(), world.getBuildings(), world.getTrees());     // TODO - add non-traversable tiles too?
 
+	// TODO: remove this hack
+	// add tree to non-traversable cells to avoid problems with path-finder
+	const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
+	const Point2D tilesGap = Point2D(self.getRadius() * 4, self.getRadius() * 4);
+	Map::TileIndex topLeft = map->getTileIndex(selfPoint - tilesGap);
+	Map::TileIndex bottomRight = map->getTileIndex(selfPoint + tilesGap);
+	std::vector<model::Tree> fakes;
+	for (int y = std::max(0, topLeft.m_y); y < std::min<int>(map->getTilesYX().size(), bottomRight.m_y + 1); ++y)
+	{
+		for (int x = std::max(0, topLeft.m_x); x < std::min<int>(map->getTilesYX().front().size(), bottomRight.m_x + 1); ++x)
+		{
+			Map::TileIndex index = Map::TileIndex(x, y);
+			if (map->getTileState(index).isOccupied())
+			{
+				Point2D center = map->getTileCenter(index);
+				fakes.push_back(model::Tree(-1, center.m_x, center.m_y, 0, 0, 0, FACTION_OTHER, map->getTileSize(), 999, 999, std::vector<model::Status>()));
+				obstacles.push_back(&fakes.back());
+			}
+		}
+	}
 
 	const Point2D worldTopleft     = Point2D(self.getRadius(), self.getRadius());
 	const Point2D worldBottomRight = Point2D(m_state->m_world.getWidth() - self.getRadius(), m_state->m_world.getHeight() - self.getRadius());
