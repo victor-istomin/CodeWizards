@@ -38,6 +38,7 @@ struct BonusSpawn
 	double     m_dangerHandicap;
 
 	Map::PointPath m_smoothPathCache;
+	Map::TilesPath m_tilesPathCache;
 
 	static const size_t  COUNT = 2;
 	static const Point2D RESPAWN_POINTS[];

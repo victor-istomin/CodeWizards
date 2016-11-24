@@ -12,7 +12,7 @@ MapsManager::MapsManager(const model::Game& game, const model::World& world, con
 void MapsManager::update(const model::Game& game, const model::World& world, const model::Wizard& self)
 {
 	// TODO - cache?
-	const size_t worldTileSize = static_cast<size_t>(self.getRadius() * 2);
+	const size_t worldTileSize = static_cast<size_t>(self.getRadius());
 	m_maps[MT_WORLD_MAP] = std::make_unique<WorldMap>(worldTileSize, game, world, self);
 	m_maps[MT_WORLD_MAP]->initTiles(game, world, self);
 }

@@ -251,5 +251,8 @@
     <ClInclude Include="NavigationMap.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Fringe.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

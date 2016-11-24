@@ -16,6 +16,8 @@
 #include <limits>
 #include <numeric>
 
+#include "Fringe.h"
+
 
 using namespace model;
 using namespace std;
@@ -460,9 +462,8 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 
 	for (BonusSpawn& spawn : m_state->m_bonuses)
 	{
-		PathFinder::TilesPath tiles;
 		const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
-		spawn.m_smoothPathCache = getSmoothPathTo(spawn.m_point, map, tiles);
+		spawn.m_smoothPathCache = getSmoothPathTo(spawn.m_point, map, spawn.m_tilesPathCache);
 
 		double currentDistance = getPathLength(spawn.m_smoothPathCache) + spawn.m_dangerHandicap;
 
@@ -521,27 +522,25 @@ void MyStrategy::goTo(const Point2D& point, model::Move& move, DebugMessage& deb
 
 	Point2D target = point;
 
+	PathFinder::TilesPath path;
 	const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
-
-	PathFinder::TilesPath path = m_pathFinder->getPath(m_state->m_self, point, *map);
-	if (path.empty())
+	Map::PointPath smoothPath; 
+	
+	if (m_reasonableBonus != nullptr && m_reasonableBonus->m_point == point)
 	{
-		int x = 0;
-		x++;
+		smoothPath = m_reasonableBonus->m_smoothPathCache;
+		path = m_reasonableBonus->m_tilesPathCache;
 	}
-
-	Map::PointPath pointPath = map->tilesToPoints(path); pointPath.push_front(m_state->m_self);
-	Map::PointPath smoothPath = map->smoothPath(m_state->m_world, pointPath);
-
-	// remove 'self' from path after smoothing
-	if (!smoothPath.empty())
-		smoothPath.pop_front();
+	else
+	{
+		smoothPath = getSmoothPathTo(target, map, path);
+	}
 
 	debugMessage.setNextWaypoint(point);
 	debugMessage.visualizePath(path, map);
 
 	// this may occur when navigating to the enemy in occupied cell
-	assert(!smoothPath.empty());
+	//assert(!smoothPath.empty());
 	if (!smoothPath.empty())
 	{
 		target = smoothPath.front();
@@ -626,7 +625,7 @@ void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage
 
 	debugMessage.visualizePath(tiles, map);
 
-	assert(!smoothPath.empty());
+	//assert(!smoothPath.empty());
 	if (!smoothPath.empty())
 	{
 		target = smoothPath.front();
@@ -975,6 +974,9 @@ void State::updateBonuses()
 				&& wizard->getId() != m_self.getId() 
 				&& spawn.m_point.getDistanceTo(*wizard) < NEAR_DISTANCE;
 		});
+
+		spawn.m_smoothPathCache.clear();
+		spawn.m_tilesPathCache.clear();
 	}
 
 	if (lastBonusSpawnTick() == 0)

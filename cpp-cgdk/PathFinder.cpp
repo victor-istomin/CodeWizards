@@ -2,7 +2,7 @@
 #include "PathFinder.h"
 #include <map>
 #include <unordered_set>
-
+#include "Fringe.h"
 
 PathFinder::PathFinder()
 {
@@ -48,8 +48,7 @@ PathFinder::TilesPath PathFinder::getPath(const Point2D& start, const Point2D& f
 	using spp::sparse_hash_set;
 
 	typedef sparse_hash_set<TileIndex, TileIndex::Hasher> IndexSet;
-	//typedef std::unordered_set<TileIndex, TileIndex::Hasher> IndexSet;
-	typedef std::multimap<double/*cost*/, TileIndex>      CostMap;
+	typedef Fringe<double, TileIndex> CostMap;
 
 	TilesPath path;
 	const TileIndex startIdx = map.getTileIndex(start);
@@ -60,22 +59,23 @@ PathFinder::TilesPath PathFinder::getPath(const Point2D& start, const Point2D& f
 
 	IndexSet    closedSet;
 	IndexSet    fringeSet;
-	CostMap     fringe;
+	CostMap     fringe(1024 * 32);
 	Transitions transitions;
 
-	closedSet.reserve(1024);
-	fringeSet.reserve(1024);
-	transitions.reserve(1024);
+	closedSet.reserve(1024 * 32);
+	fringeSet.reserve(1024 * 32);
+	transitions.reserve(1024 * 32);
 
 	fringe.insert(std::make_pair(getHeuristics(startIdx, finishIdx), startIdx));
 	fringeSet.insert(startIdx);
 	while (!fringe.empty())
 	{
-		double    thisCost = fringe.begin()->first;
-		TileIndex current  = fringe.begin()->second;
+		auto thisCostAndIndex = fringe.pop();
+		double    thisCost = thisCostAndIndex.first;
+		TileIndex current  = thisCostAndIndex.second;
+
 		double    thisCostGx = thisCost - getHeuristics(current, finishIdx);
 
-		fringe.erase(fringe.begin());  // profile later: is map better than priority queue?
 		fringeSet.erase(current);
 		closedSet.insert(current);
 

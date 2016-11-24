@@ -60,6 +60,8 @@ public:
 		bool operator==(const TileIndex& right) const { return m_x == right.m_x && m_y == right.m_y; }
 		bool operator!=(const TileIndex& right) const { return !(*this == right); }
 
+		bool operator>(const TileIndex& right) const { return m_y > right.m_y || (m_y == right.m_y && m_x > right.m_x); }
+
 		bool isValid(const Map& map) const 
 		{
 			return m_x >= 0 && m_x < static_cast<int>(map.getTilesYX().size())

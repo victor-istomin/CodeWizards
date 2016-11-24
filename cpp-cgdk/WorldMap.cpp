@@ -27,7 +27,7 @@ void WorldMap::initTiles(const model::Game& game, const model::World& world, con
 void WorldMap::calculateObstacles(const model::Game &game, const model::World &world, const model::Wizard &self)
 {
 	int worldSizeTiles = static_cast<size_t>(game.getMapSize()) / getTileSize();
-	int roadRadius = worldSizeTiles / 10;
+	int roadRadius = worldSizeTiles / 9;
 
 	auto fillRoads = [roadRadius, worldSizeTiles](int x, int y, TileState& tile)
 	{

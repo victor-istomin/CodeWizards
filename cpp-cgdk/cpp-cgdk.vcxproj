@@ -216,6 +216,7 @@
     </Link>
     <ClCompile>
       <PreprocessorDefinitions>_WINSOCK_DEPRECATED_NO_WARNINGS;USE_TIMER=1</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -258,6 +259,7 @@
     <ClInclude Include="csimplesocket\SimpleSocket.h" />
     <ClInclude Include="csimplesocket\StatTimer.h" />
     <ClInclude Include="DebugVisualizer.h" />
+    <ClInclude Include="Fringe.h" />
     <ClInclude Include="LineEquation.h" />
     <ClInclude Include="Map.h" />
     <ClInclude Include="MapsManager.h" />
