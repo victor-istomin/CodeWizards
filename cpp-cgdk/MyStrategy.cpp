@@ -41,6 +41,8 @@ const double Point2D::k_epsilon   = 0.0001;
 
 void MyStrategy::move(const Wizard& self, const World& world, const Game& game, Move& move) 
 {
+	Timer timer(__FUNCTION__, world.getMyPlayer().getName(), self.getOwnerPlayerId());
+
 	initState(self, world, game, move);
 	State::HistoryWriter updater(*m_state, m_oldState);
 	DebugMessage debugMessage(*m_visualizer, self, world);
@@ -759,7 +761,7 @@ Vec2d MyStrategy::getAlternateMoveVector(const Vec2d& suggestion)
 	const Point2D tilesGap = Point2D(self.getRadius() * 4, self.getRadius() * 4);
 	Map::TileIndex topLeft = map->getTileIndex(selfPoint - tilesGap);
 	Map::TileIndex bottomRight = map->getTileIndex(selfPoint + tilesGap);
-	std::vector<model::Tree> fakes;
+	std::vector<std::unique_ptr<model::Tree>> fakes;
 	for (int y = topLeft.m_y; y <= bottomRight.m_y; ++y)
 	{
 		for (int x = topLeft.m_x; x <= bottomRight.m_x; ++x)
@@ -771,8 +773,8 @@ Vec2d MyStrategy::getAlternateMoveVector(const Vec2d& suggestion)
 			if (map->getTileState(index).isOccupied())
 			{
 				Point2D center = map->getTileCenter(index);
-				fakes.push_back(model::Tree(-1, center.m_x, center.m_y, 0, 0, 0, FACTION_OTHER, map->getTileSize(), 999, 999, std::vector<model::Status>()));
-				obstacles.push_back(&fakes.back());
+				fakes.emplace_back(std::make_unique<model::Tree>(-1, center.m_x, center.m_y, 0, 0, 0, FACTION_OTHER, map->getTileSize(), 999, 999, std::vector<model::Status>()));
+				obstacles.push_back(fakes.back().get());
 			}
 		}
 	}
