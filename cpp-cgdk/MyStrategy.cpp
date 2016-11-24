@@ -120,7 +120,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 			// ... то поворачиваемся к цели.
 			move.setTurn(angle);
 
-			bool isWizard = getWizard(nearestTarget);
+			bool isWizard = getWizard(nearestTarget) != nullptr;
 			if (isWizard && !isRetreating)
 			{
 				// might escape. This is workaround

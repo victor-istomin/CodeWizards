@@ -25,4 +25,4 @@ do
     files="$files $i"
 done
 
-g++ -std=c++14 -static -fno-optimize-sibling-calls -fno-strict-aliasing -D_LINUX -lm -s -x c++ -O2 -Wall -Wno-unknown-pragmas -o $name $files 2>compilation.log
+g++ -std=c++14 -static -fno-optimize-sibling-calls -fno-strict-aliasing -D_LINUX -lm -s -x c++ -O2 -Wall -Wtype-limits -Wno-unknown-pragmas -o $name $files 2>compilation.log
