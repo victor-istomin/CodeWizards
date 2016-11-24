@@ -97,7 +97,7 @@ PathFinder::TilesPath PathFinder::getPath(const Point2D& start, const Point2D& f
 		const Transition& currentTransition = transitions[current];
 		for (const TileIndex& next : neighbors)
 		{
-			if (!next.isLegal(map))
+			if (!next.isValid(map))
 				continue;
 
 			// HACK - fix me: start and finish always 'not occupied'

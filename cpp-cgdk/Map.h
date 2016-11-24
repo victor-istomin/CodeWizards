@@ -60,10 +60,10 @@ public:
 		bool operator==(const TileIndex& right) const { return m_x == right.m_x && m_y == right.m_y; }
 		bool operator!=(const TileIndex& right) const { return !(*this == right); }
 
-		bool isLegal(const Map& map) const 
+		bool isValid(const Map& map) const 
 		{
-			return m_x >= 0 && m_x < map.getTilesYX().size()
-				&& m_y >= 0 && m_y < map.getTilesYX().size();
+			return m_x >= 0 && m_x < static_cast<int>(map.getTilesYX().size())
+				&& m_y >= 0 && m_y < static_cast<int>(map.getTilesYX().size());
 		}
 
 		double manhattanDistance(const TileIndex& to) const { return std::abs(to.m_x - m_x) + std::abs(to.m_y - m_y); }
@@ -199,13 +199,16 @@ protected:
 		Point2D topLeft     = center - r;
 		Point2D bottomRight = center + r;
 
+		int rowsCount    = m_tilesYX.size();
+		int columnsCount = m_tilesYX.front().size();
+
 		for (int y = static_cast<int>(topLeft.m_y / m_tileSize); y != static_cast<int>(bottomRight.m_y / m_tileSize + 1); ++y)
 		{
-			if (y < 0 || y >= m_tilesYX.size())
+			if (y < 0 || y >= rowsCount)
 				continue;  // trees and projectiles won't fall through the edge of the world, but AI process will
 
 			int xStart = std::max(static_cast<int>(topLeft.m_x / m_tileSize), 0);
-			int xFinish = std::min(static_cast<int>(bottomRight.m_x / m_tileSize + 1), static_cast<int>(m_tilesYX.front().size()));
+			int xFinish = std::min(static_cast<int>(bottomRight.m_x / m_tileSize + 1), columnsCount);
 
 			for (int x = xStart; x < xFinish; ++x)
 			{

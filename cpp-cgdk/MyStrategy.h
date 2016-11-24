@@ -4,7 +4,9 @@
 #define _MY_STRATEGY_H_
 
 #ifndef _DEBUG
-#define NDEBUG
+#  ifndef NDEBUG
+#    define NDEBUG
+#  endif
 #endif
 
 #include "Strategy.h"
@@ -41,7 +43,8 @@ struct BonusSpawn
 	static const Point2D RESPAWN_POINTS[];
 	static const double  DANGER_HANDICAP;
 
-	BonusSpawn(const Point2D& point, BonusState state, double handicap = 0) : m_point(point), m_state(state), m_lastCheckTick(0), m_dangerHandicap(handicap) {}
+	BonusSpawn(const Point2D& point, BonusState state, double handicap = 0) 
+		: m_point(point), m_state(state), m_lastCheckTick(0), m_dangerHandicap(handicap), m_teamateCompetitors(0) {}
 };
 
 typedef std::array<BonusSpawn, BonusSpawn::COUNT> BonusSpawns;

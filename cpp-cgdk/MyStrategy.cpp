@@ -349,7 +349,7 @@ Point2D MyStrategy::getNextWaypoint()
 {
 	// assume that waypoint are sorted by-distance !!!
 
-	size_t lastWaypointIndex = m_waypoints.empty() ? 0 : m_waypoints.size() - 1;
+	int lastWaypointIndex = m_waypoints.empty() ? 0 : m_waypoints.size() - 1;
 
 	Point2D currentWaypoint = m_waypoints[m_currentWaypointIndex];
 	if (currentWaypoint.getDistanceTo(m_state->m_self) < WAYPOINT_RADIUS && m_currentWaypointIndex < lastWaypointIndex)
@@ -760,11 +760,14 @@ Vec2d MyStrategy::getAlternateMoveVector(const Vec2d& suggestion)
 	Map::TileIndex topLeft = map->getTileIndex(selfPoint - tilesGap);
 	Map::TileIndex bottomRight = map->getTileIndex(selfPoint + tilesGap);
 	std::vector<model::Tree> fakes;
-	for (int y = std::max(0, topLeft.m_y); y < std::min<int>(map->getTilesYX().size(), bottomRight.m_y + 1); ++y)
+	for (int y = topLeft.m_y; y <= bottomRight.m_y; ++y)
 	{
-		for (int x = std::max(0, topLeft.m_x); x < std::min<int>(map->getTilesYX().front().size(), bottomRight.m_x + 1); ++x)
+		for (int x = topLeft.m_x; x <= bottomRight.m_x; ++x)
 		{
 			Map::TileIndex index = Map::TileIndex(x, y);
+			if (!index.isValid(*map))
+				continue;
+
 			if (map->getTileState(index).isOccupied())
 			{
 				Point2D center = map->getTileCenter(index);
