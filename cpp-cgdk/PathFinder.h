@@ -46,7 +46,9 @@ private:
 // 			}
 // 		};
 
-		CacheKey(const Map::TileIndex& from = Map::TileIndex(), const Map::TileIndex& to = Map::TileIndex()) : m_from(from), m_to(to) {}
+		CacheKey(const Map::TileIndex& from, const Map::TileIndex& to) : m_from(from), m_to(to) {}
+		CacheKey() : m_from(), m_to() {}
+
 		bool operator==(const CacheKey& right) const 
 		{ 
 			return m_from == right.m_from && m_to == right.m_to;

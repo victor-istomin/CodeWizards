@@ -3,6 +3,12 @@
 #include "model/Wizard.h"
 #include "PathFinder.h"
 
+#ifndef _DEBUG
+#  ifndef NDEBUG
+#    define NDEBUG
+#  endif 
+#endif
+
 #include <cmath>
 #include <algorithm>
 #include <iterator>
@@ -94,13 +100,14 @@ void WorldMap::updatePathFinder(PathFinder& pathFinder) const
 size_t WorldMap::hashRowObstacles(const TilesRow& row) const
 {
 	std::vector<size_t> map;
-	map.resize(row.size() / sizeof(size_t), 0);
+	map.resize(row.size() / 4/*sizeof(size_t)?*/, 0);
 
 	uint8_t* byte = (uint8_t*)map.data();
 	for (const TileState& tile : row)
 	{
 		assert(tile.m_state < 0xFF);
 		*byte = uint8_t(tile.m_state & 0xFF);
+		byte++;
 	}
 
 	size_t seed = 0;
