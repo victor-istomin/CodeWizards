@@ -23,9 +23,9 @@ struct TileState
 	};
 
 	State m_state;
-	//bool  m_isVisible; // TODO - looks implemented, but not yet used
+	bool  m_isVisible;
 
-	TileState(State state, bool isVisible) : m_state(state)/*, m_isVisible(isVisible)*/ {}
+	TileState(State state, bool isVisible) : m_state(state), m_isVisible(isVisible) {}
 	bool isOccupied() const { return m_state == OCCUPIED; }
 };
 

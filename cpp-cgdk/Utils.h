@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <functional>
 #include <vector>
 #include <iterator>
 #include <string>
@@ -124,6 +125,11 @@ std::vector<PointerType> filterPointers(const Functor& predicate, const Paramete
 	return results;
 }
 
-
+template <typename T, typename Hasher = std::hash<T>>
+inline void hash_combine(std::size_t& seed, const T& v)
+{
+	Hasher hasher;
+	seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
 
 

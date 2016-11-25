@@ -1,12 +1,15 @@
 #pragma once
 #include "Map.h"
 
+class PathFinder;
 class WorldMap 
 	: public Map
 {
 public:
 	WorldMap(size_t tileSize, const model::Game& game, const model::World& world, const model::Wizard& self);
 	~WorldMap();
+
+	void updatePathFinder(PathFinder& pathFinder) const;
 
 private:
 	virtual void initTiles(const model::Game& game, const model::World& world, const model::Wizard& self) override;
@@ -35,5 +38,6 @@ private:
 
 	double getUnitVisionRange(const model::CircularUnit& unit) const;
 
+	size_t hashRowObstacles(const TilesRow& row) const;
 };
 

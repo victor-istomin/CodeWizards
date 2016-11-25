@@ -30,7 +30,7 @@ Point2D MyStrategy::BOTTOM_GUARD_POINT = Point2D(2000 + 400 - 35, 4000 - 400 + 3
 
 // order is importand due to handicap
 const Point2D BonusSpawn::RESPAWN_POINTS[] = { Point2D(4000 * 0.3, 4000 * 0.3), Point2D(4000 * 0.7, 4000 * 0.7) };
-const double  BonusSpawn::DANGER_HANDICAP = 200;
+const double  BonusSpawn::DANGER_HANDICAP = 500;
 
 // TODO - remove this from globals!
 MyStrategy::TWaypointsMap MyStrategy::g_waypointsMap;
@@ -235,7 +235,7 @@ void MyStrategy::initialSetup()
 	double mapSize = m_state->m_game.getMapSize();
 	double wizardSize = m_state->m_self.getRadius();
 
-	MyStrategy::MID_GUARD_POINT = Point2D(mapSize * 0.5 - 150, mapSize * 0.5 + 280);
+	MyStrategy::MID_GUARD_POINT = Point2D(mapSize * 0.5 - 200, mapSize * 0.5 + 300);
 	g_waypointsMap[LaneType::LANE_MIDDLE] = TWaypoints
 	{ 
 		Point2D(100.0, mapSize - 100.0),
@@ -321,11 +321,11 @@ void MyStrategy::initState(const model::Wizard& self, const model::World& world,
 
 	if (!m_maps)
 	{
-		m_maps = std::make_unique<MapsManager>(game, world, self);
+		m_maps = std::make_unique<MapsManager>(game, world, self, *m_pathFinder);
 	}
 	else
 	{
-		m_maps->update(game, world, self);
+		m_maps->update(game, world, self, *m_pathFinder);
 	}
 
 	// respawn detect

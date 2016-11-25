@@ -32,6 +32,25 @@ PathFinder::TilesPath PathFinder::reconstructPath(const Map::TileIndex& start, c
 		current = parentIt->second.m_parent;
 	}
 
+	CacheKey key{ start, finish };
+	TilesPath pathToCache = path;
+
+	const int STEPS    = 3;
+	const int MIN_SIZE = 6;
+	for (int i = 0; i < STEPS && pathToCache.size() > MIN_SIZE; ++i)
+	{
+		m_cache.emplace_back(key, pathToCache);
+		if (m_cache.size() > 10)
+			m_cache.pop_front();
+
+		pathToCache.pop_front();
+		key.m_from = pathToCache.front();
+	}
+
+	const int MAX_CACHE_SIZE = 10 * STEPS;
+	if (m_cache.size() > MAX_CACHE_SIZE)
+		m_cache.pop_front();
+
 	return path;
 }
 
@@ -53,6 +72,19 @@ PathFinder::TilesPath PathFinder::getPath(const Point2D& start, const Point2D& f
 	TilesPath path;
 	const TileIndex startIdx = map.getTileIndex(start);
 	const TileIndex finishIdx = map.getTileIndex(finish);
+
+	static size_t dbg_cacheHit = 0;
+	static size_t dbg_cacheMiss = 0;
+
+	const CacheKey key{ startIdx, finishIdx };
+	auto cacheIt = std::find_if(m_cache.begin(), m_cache.end(), [&key](const CacheItem& item) {return item.m_key == key; });
+	if (cacheIt != m_cache.end())
+	{
+		dbg_cacheHit++;
+		return cacheIt->m_path;
+	}
+
+	dbg_cacheMiss++;
 	
  	if (startIdx == finishIdx)
 		return TilesPath{ startIdx };
@@ -122,4 +154,13 @@ PathFinder::TilesPath PathFinder::getPath(const Point2D& start, const Point2D& f
 	}
 
 	return path;
+}
+
+void PathFinder::updateTileStates(const TileStateHashes& hashes)
+{
+	if (hashes != m_tilesHashe)
+	{
+		m_cache.clear(); // flush
+		m_tilesHashe = hashes;
+	}
 }
