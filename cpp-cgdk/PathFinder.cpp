@@ -2,7 +2,7 @@
 #include "PathFinder.h"
 #include <map>
 #include <unordered_set>
-
+#include "Fringe.h"
 
 PathFinder::PathFinder()
 {
@@ -32,6 +32,25 @@ PathFinder::TilesPath PathFinder::reconstructPath(const Map::TileIndex& start, c
 		current = parentIt->second.m_parent;
 	}
 
+	CacheKey key{ start, finish };
+	TilesPath pathToCache = path;
+
+	const int STEPS    = 3;
+	const int MIN_SIZE = 6;
+	for (int i = 0; i < STEPS && pathToCache.size() > MIN_SIZE; ++i)
+	{
+		m_cache.emplace_back(key, pathToCache);
+		if (m_cache.size() > 10)
+			m_cache.pop_front();
+
+		pathToCache.pop_front();
+		key.m_from = pathToCache.front();
+	}
+
+	const int MAX_CACHE_SIZE = 10 * STEPS;
+	if (m_cache.size() > MAX_CACHE_SIZE)
+		m_cache.pop_front();
+
 	return path;
 }
 
@@ -48,34 +67,47 @@ PathFinder::TilesPath PathFinder::getPath(const Point2D& start, const Point2D& f
 	using spp::sparse_hash_set;
 
 	typedef sparse_hash_set<TileIndex, TileIndex::Hasher> IndexSet;
-	//typedef std::unordered_set<TileIndex, TileIndex::Hasher> IndexSet;
-	typedef std::multimap<double/*cost*/, TileIndex>      CostMap;
+	typedef Fringe<double, TileIndex> CostMap;
 
 	TilesPath path;
 	const TileIndex startIdx = map.getTileIndex(start);
 	const TileIndex finishIdx = map.getTileIndex(finish);
+
+	static size_t dbg_cacheHit = 0;
+	static size_t dbg_cacheMiss = 0;
+
+	const CacheKey key{ startIdx, finishIdx };
+	auto cacheIt = std::find_if(m_cache.begin(), m_cache.end(), [&key](const CacheItem& item) {return item.m_key == key; });
+	if (cacheIt != m_cache.end())
+	{
+		dbg_cacheHit++;
+		return cacheIt->m_path;
+	}
+
+	dbg_cacheMiss++;
 	
  	if (startIdx == finishIdx)
 		return TilesPath{ startIdx };
 
 	IndexSet    closedSet;
 	IndexSet    fringeSet;
-	CostMap     fringe;
+	CostMap     fringe(1024 * 32);
 	Transitions transitions;
 
-	closedSet.reserve(1024);
-	fringeSet.reserve(1024);
-	transitions.reserve(1024);
+	closedSet.reserve(1024 * 32);
+	fringeSet.reserve(1024 * 32);
+	transitions.reserve(1024 * 32);
 
 	fringe.insert(std::make_pair(getHeuristics(startIdx, finishIdx), startIdx));
 	fringeSet.insert(startIdx);
 	while (!fringe.empty())
 	{
-		double    thisCost = fringe.begin()->first;
-		TileIndex current  = fringe.begin()->second;
+		auto thisCostAndIndex = fringe.pop();
+		double    thisCost = thisCostAndIndex.first;
+		TileIndex current  = thisCostAndIndex.second;
+
 		double    thisCostGx = thisCost - getHeuristics(current, finishIdx);
 
-		fringe.erase(fringe.begin());  // profile later: is map better than priority queue?
 		fringeSet.erase(current);
 		closedSet.insert(current);
 
@@ -97,7 +129,7 @@ PathFinder::TilesPath PathFinder::getPath(const Point2D& start, const Point2D& f
 		const Transition& currentTransition = transitions[current];
 		for (const TileIndex& next : neighbors)
 		{
-			if (!next.isLegal(map))
+			if (!next.isValid(map))
 				continue;
 
 			// HACK - fix me: start and finish always 'not occupied'
@@ -122,4 +154,13 @@ PathFinder::TilesPath PathFinder::getPath(const Point2D& start, const Point2D& f
 	}
 
 	return path;
+}
+
+void PathFinder::updateTileStates(const TileStateHashes& hashes)
+{
+	if (hashes != m_tilesHashe)
+	{
+		m_cache.clear(); // flush
+		m_tilesHashe = hashes;
+	}
 }

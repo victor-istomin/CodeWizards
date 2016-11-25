@@ -16,6 +16,8 @@
 #include <limits>
 #include <numeric>
 
+#include "Fringe.h"
+
 
 using namespace model;
 using namespace std;
@@ -28,7 +30,7 @@ Point2D MyStrategy::BOTTOM_GUARD_POINT = Point2D(2000 + 400 - 35, 4000 - 400 + 3
 
 // order is importand due to handicap
 const Point2D BonusSpawn::RESPAWN_POINTS[] = { Point2D(4000 * 0.3, 4000 * 0.3), Point2D(4000 * 0.7, 4000 * 0.7) };
-const double  BonusSpawn::DANGER_HANDICAP = 200;
+const double  BonusSpawn::DANGER_HANDICAP = 500;
 
 // TODO - remove this from globals!
 MyStrategy::TWaypointsMap MyStrategy::g_waypointsMap;
@@ -41,6 +43,8 @@ const double Point2D::k_epsilon   = 0.0001;
 
 void MyStrategy::move(const Wizard& self, const World& world, const Game& game, Move& move) 
 {
+	Timer timer(__FUNCTION__, world.getMyPlayer().getName(), self.getOwnerPlayerId());
+
 	initState(self, world, game, move);
 	State::HistoryWriter updater(*m_state, m_oldState);
 	DebugMessage debugMessage(*m_visualizer, self, world);
@@ -83,7 +87,25 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 
 		Point2D previousWaypoint = getPreviousWaypoint();
 		if (m_reasonableBonus)
-			previousWaypoint = m_reasonableBonus->m_point;
+		{
+			bool canGet = !m_state->m_isLowHP;
+			if (m_state->m_isLowHP)
+			{
+				const Point2D& nextPathPoint = m_reasonableBonus->m_smoothPathCache.empty() ? m_reasonableBonus->m_point : m_reasonableBonus->m_smoothPathCache.front();
+				auto enemies = filterPointers<const model::Unit*>([this](const model::Unit& u) {return isEnemy(u); }, world.getBuildings(), world.getWizards(), world.getMinions());
+
+				bool noEnemiesThatWay = enemies.end() == std::find_if(enemies.begin(), enemies.end(), 
+					[&nextPathPoint, &self](const model::Unit* enemy) 
+				{
+					return std::abs(self.getAngleTo(*enemy) - self.getAngleTo(nextPathPoint.m_x, nextPathPoint.m_y)) > (PI / 2);
+				});
+
+				canGet = noEnemiesThatWay;
+			}
+
+			if (canGet)
+				previousWaypoint = m_reasonableBonus->m_point;
+		}
 
 		retreatTo(previousWaypoint, move, debugMessage);
 		debugMessage.setNextWaypoint(previousWaypoint);
@@ -213,7 +235,7 @@ void MyStrategy::initialSetup()
 	double mapSize = m_state->m_game.getMapSize();
 	double wizardSize = m_state->m_self.getRadius();
 
-	MyStrategy::MID_GUARD_POINT = Point2D(mapSize * 0.5 - 150, mapSize * 0.5 + 280);
+	MyStrategy::MID_GUARD_POINT = Point2D(mapSize * 0.5 - 200, mapSize * 0.5 + 300);
 	g_waypointsMap[LaneType::LANE_MIDDLE] = TWaypoints
 	{ 
 		Point2D(100.0, mapSize - 100.0),
@@ -299,11 +321,11 @@ void MyStrategy::initState(const model::Wizard& self, const model::World& world,
 
 	if (!m_maps)
 	{
-		m_maps = std::make_unique<MapsManager>(game, world, self);
+		m_maps = std::make_unique<MapsManager>(game, world, self, *m_pathFinder);
 	}
 	else
 	{
-		m_maps->update(game, world, self);
+		m_maps->update(game, world, self, *m_pathFinder);
 	}
 
 	// respawn detect
@@ -331,7 +353,7 @@ Point2D MyStrategy::getNextWaypoint()
 {
 	// assume that waypoint are sorted by-distance !!!
 
-	size_t lastWaypointIndex = m_waypoints.empty() ? 0 : m_waypoints.size() - 1;
+	int lastWaypointIndex = m_waypoints.empty() ? 0 : m_waypoints.size() - 1;
 
 	Point2D currentWaypoint = m_waypoints[m_currentWaypointIndex];
 	if (currentWaypoint.getDistanceTo(m_state->m_self) < WAYPOINT_RADIUS && m_currentWaypointIndex < lastWaypointIndex)
@@ -438,13 +460,12 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 	const BonusSpawn* nearest = nullptr;
 	double minPathDistance = std::numeric_limits<double>::infinity();
 
-	for (const BonusSpawn& spawn : m_state->m_bonuses)
+	for (BonusSpawn& spawn : m_state->m_bonuses)
 	{
-		PathFinder::TilesPath tiles;
 		const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
-		Map::PointPath path = getSmoothPathTo(spawn.m_point, map, tiles);
+		spawn.m_smoothPathCache = getSmoothPathTo(spawn.m_point, map, spawn.m_tilesPathCache);
 
-		double currentDistance = getPathLength(path) + spawn.m_dangerHandicap;
+		double currentDistance = getPathLength(spawn.m_smoothPathCache) + spawn.m_dangerHandicap;
 
 		if (currentDistance < MAX_TRAVEL_DISTANCE
 			&& (nearest == nullptr || currentDistance < minPathDistance)
@@ -501,26 +522,25 @@ void MyStrategy::goTo(const Point2D& point, model::Move& move, DebugMessage& deb
 
 	Point2D target = point;
 
+	PathFinder::TilesPath path;
 	const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
-
-	PathFinder::TilesPath path = m_pathFinder->getPath(m_state->m_self, point, *map);
-	if (path.empty())
+	Map::PointPath smoothPath; 
+	
+	if (m_reasonableBonus != nullptr && m_reasonableBonus->m_point == point)
 	{
-		int x = 0;
-		x++;
+		smoothPath = m_reasonableBonus->m_smoothPathCache;
+		path = m_reasonableBonus->m_tilesPathCache;
 	}
-
-	Map::PointPath pointPath = map->tilesToPoints(path); pointPath.push_front(m_state->m_self);
-	Map::PointPath smoothPath = map->smoothPath(m_state->m_world, pointPath);
-
-	// remove 'self' from path after smoothing
-	if (!smoothPath.empty())
-		smoothPath.pop_front();
+	else
+	{
+		smoothPath = getSmoothPathTo(target, map, path);
+	}
 
 	debugMessage.setNextWaypoint(point);
 	debugMessage.visualizePath(path, map);
 
-	assert(!smoothPath.empty());
+	// this may occur when navigating to the enemy in occupied cell
+	//assert(!smoothPath.empty());
 	if (!smoothPath.empty())
 	{
 		target = smoothPath.front();
@@ -605,7 +625,7 @@ void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage
 
 	debugMessage.visualizePath(tiles, map);
 
-	assert(!smoothPath.empty());
+	//assert(!smoothPath.empty());
 	if (!smoothPath.empty())
 	{
 		target = smoothPath.front();
@@ -730,10 +750,33 @@ Vec2d MyStrategy::getAlternateMoveVector(const Vec2d& suggestion)
 
 	const double LOOKUP_DISTANCE = m_state->m_game.getWizardRadius() * 3;
 
+	std::vector<std::unique_ptr<model::Tree>> fakes;
 	auto obstacles = filterPointers<const model::CircularUnit*>([&selfPoint, &LOOKUP_DISTANCE, &self](const model::CircularUnit& u)
 		{ return self.getId() != u.getId() && selfPoint.getDistanceTo(u) < LOOKUP_DISTANCE; }
 		, world.getWizards(), world.getMinions(), world.getBuildings(), world.getTrees());     // TODO - add non-traversable tiles too?
 
+	// TODO: remove this hack
+	// add tree to non-traversable cells to avoid problems with path-finder
+	const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
+	const Point2D tilesGap = Point2D(self.getRadius() * 4, self.getRadius() * 4);
+	Map::TileIndex topLeft = map->getTileIndex(selfPoint - tilesGap);
+	Map::TileIndex bottomRight = map->getTileIndex(selfPoint + tilesGap);
+	for (int y = topLeft.m_y; y <= bottomRight.m_y; ++y)
+	{
+		for (int x = topLeft.m_x; x <= bottomRight.m_x; ++x)
+		{
+			Map::TileIndex index = Map::TileIndex(x, y);
+			if (!index.isValid(*map))
+				continue;
+
+			if (map->getTileState(index).isOccupied())
+			{
+				Point2D center = map->getTileCenter(index);
+				fakes.emplace_back(std::make_unique<model::Tree>(-1, center.m_x, center.m_y, 0, 0, 0, FACTION_OTHER, map->getTileSize(), 999, 999, std::vector<model::Status>()));
+				obstacles.push_back(fakes.back().get());
+			}
+		}
+	}
 
 	const Point2D worldTopleft     = Point2D(self.getRadius(), self.getRadius());
 	const Point2D worldBottomRight = Point2D(m_state->m_world.getWidth() - self.getRadius(), m_state->m_world.getHeight() - self.getRadius());
@@ -931,6 +974,9 @@ void State::updateBonuses()
 				&& wizard->getId() != m_self.getId() 
 				&& spawn.m_point.getDistanceTo(*wizard) < NEAR_DISTANCE;
 		});
+
+		spawn.m_smoothPathCache.clear();
+		spawn.m_tilesPathCache.clear();
 	}
 
 	if (lastBonusSpawnTick() == 0)

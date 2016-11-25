@@ -3,6 +3,12 @@
 #ifndef _MY_STRATEGY_H_
 #define _MY_STRATEGY_H_
 
+#ifndef _DEBUG
+#  ifndef NDEBUG
+#    define NDEBUG
+#  endif
+#endif
+
 #include "Strategy.h"
 #include "model/LaneType.h"
 #include "LineEquation.h"
@@ -31,11 +37,15 @@ struct BonusSpawn
 	int        m_teamateCompetitors;
 	double     m_dangerHandicap;
 
+	Map::PointPath m_smoothPathCache;
+	Map::TilesPath m_tilesPathCache;
+
 	static const size_t  COUNT = 2;
 	static const Point2D RESPAWN_POINTS[];
 	static const double  DANGER_HANDICAP;
 
-	BonusSpawn(const Point2D& point, BonusState state, double handicap = 0) : m_point(point), m_state(state), m_lastCheckTick(0), m_dangerHandicap(handicap) {}
+	BonusSpawn(const Point2D& point, BonusState state, double handicap = 0) 
+		: m_point(point), m_state(state), m_lastCheckTick(0), m_dangerHandicap(handicap), m_teamateCompetitors(0) {}
 };
 
 typedef std::array<BonusSpawn, BonusSpawn::COUNT> BonusSpawns;

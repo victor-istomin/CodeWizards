@@ -1,7 +1,9 @@
 #pragma once
 #include <algorithm>
+#include <functional>
 #include <vector>
 #include <iterator>
+#include <string>
 
 class NonCopyable
 {
@@ -12,15 +14,17 @@ protected:
 	NonCopyable() {}
 };
 
-#if _DEBUG
+#if _DEBUG || USE_TIMER
 #	include <iostream>
 #	include <ctime>
 #	include <map>
 #   undef max 
 class Timer
 {
-	const char* m_function;
-	clock_t m_start, m_finish;
+	const char*  m_function;
+	clock_t      m_start, m_finish;
+	std::string  m_player;
+	long long    m_playerId;
 
 	struct TotalHolder
 	{
@@ -32,10 +36,14 @@ class Timer
 		};
 
 		std::map<const char* /*function*/, Data> m_totals;
+		std::string m_player;
+		long long   m_playerId;
+
+		TotalHolder() : m_playerId(0) {}
 
 		~TotalHolder()
 		{
-			std::cout << "Total timings: " << std::endl;
+			std::cout << "Total timings for " << m_player << " (" << m_playerId << "): " << std::endl;
 			for (const auto& function : m_totals)
 			{
 				const Data& totals = function.second;
@@ -49,12 +57,19 @@ class Timer
 
 public:
 
-	explicit Timer(const char* function) : m_function(function), m_start(clock()), m_finish(0) {}
+	explicit Timer(const char* function, const std::string& player = std::string(), long long id = -1)
+		: m_function(function), m_start(clock()), m_finish(0), m_player(player), m_playerId(id) { }
 
 	~Timer()
 	{
 		m_finish = clock();
 		static TotalHolder totalHolder;
+
+		if (!m_player.empty())
+			totalHolder.m_player = m_player;
+		if (m_playerId != -1)
+			totalHolder.m_playerId = m_playerId;
+
 		TotalHolder::Data& totals = totalHolder.m_totals[m_function];
 
 		totals.totalCalls++;
@@ -110,6 +125,11 @@ std::vector<PointerType> filterPointers(const Functor& predicate, const Paramete
 	return results;
 }
 
-
+template <typename T, typename Hasher = std::hash<T>>
+inline void hash_combine(std::size_t& seed, const T& v)
+{
+	Hasher hasher;
+	seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
 
 

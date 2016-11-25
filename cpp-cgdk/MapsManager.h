@@ -9,6 +9,7 @@
 
 class Map;
 class DebugMessage;
+class PathFinder;
 
 class MapsManager
 	: NonCopyable
@@ -24,8 +25,8 @@ public:
 	typedef std::unique_ptr<Map>      MapPtr;
 	typedef std::map<MapType, MapPtr> Maps;
 
-	explicit MapsManager(const model::Game& game, const model::World& world, const model::Wizard& self);
-	void update(const model::Game& game, const model::World& world, const model::Wizard& self);
+	explicit MapsManager(const model::Game& game, const model::World& world, const model::Wizard& self, PathFinder& pathFinder);
+	void update(const model::Game& game, const model::World& world, const model::Wizard& self, PathFinder& pathFinder);
 	~MapsManager();
 
 	void visualize(DebugMessage& message, MapType mapType) const;
@@ -33,6 +34,5 @@ public:
 
 private:
 	Maps m_maps;
-
 };
 
