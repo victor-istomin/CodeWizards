@@ -772,7 +772,7 @@ Vec2d MyStrategy::getAlternateMoveVector(const Vec2d& suggestion)
 			if (map->getTileState(index).isOccupied())
 			{
 				Point2D center = map->getTileCenter(index);
-				fakes.emplace_back(std::make_unique<model::Tree>(-1, center.m_x, center.m_y, 0, 0, 0, FACTION_OTHER, map->getTileSize(), 999, 999, std::vector<model::Status>()));
+				fakes.emplace_back(std::make_unique<model::Tree>(-1, center.m_x, center.m_y, 0, 0, 0, FACTION_OTHER, double(map->getTileSize()), 999, 999, std::vector<model::Status>()));
 				obstacles.push_back(fakes.back().get());
 			}
 		}
