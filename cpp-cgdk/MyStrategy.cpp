@@ -76,7 +76,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 	auto emptyPredictions = std::vector<PredictedUnit>();
 	auto dangerousEnemies = filterPointers<const model::Unit*>(
 		[&self, this](const model::Unit& u) {return isEnemy(u) && self.getDistanceTo(u) < getSafeDistance(u); },
-		world.getBuildings(), world.getWizards(), world.getMinions(),
+		world.getBuildings(), world.getWizards(), world.getMinions(), m_state->m_predictedBuildings,
 		(noSpawnSafeTicks > 0 ? emptyPredictions : m_state->m_enemySpawnPredictions));
 
 	double totalEnemiesDamage = std::accumulate(dangerousEnemies.begin(), dangerousEnemies.end(), 0.0,
@@ -104,7 +104,8 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 			if (m_state->m_isLowHP)
 			{
 				const Point2D& nextPathPoint = m_reasonableBonus->m_smoothPathCache.empty() ? m_reasonableBonus->m_point : m_reasonableBonus->m_smoothPathCache.front();
-				auto enemies = filterPointers<const model::Unit*>([this](const model::Unit& u) {return isEnemy(u); }, world.getBuildings(), world.getWizards(), world.getMinions());
+				auto enemies = filterPointers<const model::Unit*>([this](const model::Unit& u) {return isEnemy(u); }, 
+					world.getBuildings(), world.getWizards(), world.getMinions(), m_state->m_predictedBuildings);
 
 				bool noEnemiesThatWay = enemies.end() == std::find_if(enemies.begin(), enemies.end(), 
 					[&nextPathPoint, &self](const model::Unit* enemy) 
@@ -620,6 +621,7 @@ void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage
 		std::for_each(world.getWizards().begin(), world.getWizards().end(),     findNearestEnemy);
 		std::for_each(world.getMinions().begin(), world.getMinions().end(),     findNearestEnemy);
 		std::for_each(world.getBuildings().begin(), world.getBuildings().end(), findNearestEnemy);
+		std::for_each(m_state->m_predictedBuildings.begin(), m_state->m_predictedBuildings.end(), findNearestEnemy);
 
 		if (m_state->m_nextMinionRespawnTick - world.getTickIndex() < 100)
 			std::for_each(m_state->m_enemySpawnPredictions.begin(), m_state->m_enemySpawnPredictions.end(), findNearestEnemy);
@@ -1064,6 +1066,29 @@ void State::updatePredictions()
 	m_enemySpawnPredictions.emplace_back(PredictedUnit(enemyCorner + Point2D(-minionSpawnDxDy - halfTileDxDy, halfTileDxDy), minionSpawnRadius, enemyFaction, m_nextMinionRespawnTick, predictedDamage, safeDistance));
 	m_enemySpawnPredictions.emplace_back(PredictedUnit(enemyCorner + Point2D(-halfTileDxDy, minionSpawnDxDy + halfTileDxDy), minionSpawnRadius, enemyFaction, m_nextMinionRespawnTick, predictedDamage, safeDistance));
 	m_enemySpawnPredictions.emplace_back(PredictedUnit(enemyCorner + Point2D(-minionSpawnDxDy / diagonal - halfTileDxDy, minionSpawnDxDy / diagonal + halfTileDxDy), minionSpawnRadius, enemyFaction, m_nextMinionRespawnTick, predictedDamage, safeDistance));
+
+	const Point2D selfPoint = m_self;
+
+	const auto& buildings = m_world.getBuildings();
+	if (buildings.end() == std::find_if(buildings.begin(), buildings.end(), [selfFaction](const model::Building& b) { return b.getFaction() != selfFaction && b.getType() == model::BUILDING_FACTION_BASE; }))
+	{
+		// predict enemy base
+		PredictedUnit idPlaceholder = PredictedUnit(Point2D(0, 0), 0, FACTION_OTHER, 0, 0, 0);
+
+		auto teamBaseIt = std::find_if(buildings.begin(), buildings.end(), [selfFaction](const model::Building& b) {return b.getFaction() == selfFaction && b.getType() == model::BUILDING_FACTION_BASE; });
+		const Point2D enemyBasePoint = Point2D(m_world.getWidth(), m_world.getHeight()) - Point2D(*teamBaseIt);
+
+		if (selfPoint.getDistanceTo(enemyBasePoint) < m_game.getFactionBaseVisionRange() * 1.3)
+		{
+			auto enemyBase = model::Building(idPlaceholder.getId(),
+				enemyBasePoint.m_x, enemyBasePoint.m_y, 0, 0, 0, enemyFaction, teamBaseIt->getRadius(), 
+				teamBaseIt->getLife(), teamBaseIt->getMaxLife(), std::vector<model::Status>(), teamBaseIt->getType(),
+				teamBaseIt->getVisionRange(), teamBaseIt->getAttackRange(), teamBaseIt->getDamage(), 0, 0);
+
+			m_predictedBuildings.push_back(std::move(enemyBase));
+		}
+	}
+
 
 // 	const Point2D teamCorner{ 0, m_world.getHeight() };
 // 	m_predictions.emplace_back(PredictedUnit(teamCorner + Point2D(minionSpawnDxDy + halfTileDxDy, -halfTileDxDy), minionSpawnRadius, selfFaction, m_nextMinionRespawnTick, predictedDamage, safeDistance));

@@ -69,6 +69,7 @@ struct State
 
 	typedef std::vector<const model::Unit*> PointsVector;
 	typedef std::vector<PredictedUnit>      PredictedUnits;
+	typedef std::vector<model::Building>    Buildings;
 
 	const model::Wizard& m_self;
 	const model::World&  m_world;
@@ -77,6 +78,7 @@ struct State
 	const StorableState& m_storedState;
 	BonusSpawns          m_bonuses;
 	PredictedUnits       m_enemySpawnPredictions;
+	Buildings            m_predictedBuildings;
 	const MyStrategy*    m_strategy;
 
 	int    m_nextMinionRespawnTick;
