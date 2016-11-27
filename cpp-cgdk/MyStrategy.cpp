@@ -1076,16 +1076,19 @@ void State::updatePredictions()
 		PredictedUnit idPlaceholder = PredictedUnit(Point2D(0, 0), 0, FACTION_OTHER, 0, 0, 0);
 
 		auto teamBaseIt = std::find_if(buildings.begin(), buildings.end(), [selfFaction](const model::Building& b) {return b.getFaction() == selfFaction && b.getType() == model::BUILDING_FACTION_BASE; });
-		const Point2D enemyBasePoint = Point2D(m_world.getWidth(), m_world.getHeight()) - Point2D(*teamBaseIt);
-
-		if (selfPoint.getDistanceTo(enemyBasePoint) < m_game.getFactionBaseVisionRange() * 1.3)
+		if (buildings.end() != teamBaseIt)
 		{
-			auto enemyBase = model::Building(idPlaceholder.getId(),
-				enemyBasePoint.m_x, enemyBasePoint.m_y, 0, 0, 0, enemyFaction, teamBaseIt->getRadius(), 
-				teamBaseIt->getLife(), teamBaseIt->getMaxLife(), std::vector<model::Status>(), teamBaseIt->getType(),
-				teamBaseIt->getVisionRange(), teamBaseIt->getAttackRange(), teamBaseIt->getDamage(), 0, 0);
+			const Point2D enemyBasePoint = Point2D(m_world.getWidth(), m_world.getHeight()) - Point2D(*teamBaseIt);
 
-			m_predictedBuildings.push_back(std::move(enemyBase));
+			if (selfPoint.getDistanceTo(enemyBasePoint) < m_game.getFactionBaseVisionRange() * 1.3)
+			{
+				auto enemyBase = model::Building(idPlaceholder.getId(),
+					enemyBasePoint.m_x, enemyBasePoint.m_y, 0, 0, 0, enemyFaction, teamBaseIt->getRadius(),
+					teamBaseIt->getLife(), teamBaseIt->getMaxLife(), std::vector<model::Status>(), teamBaseIt->getType(),
+					teamBaseIt->getVisionRange(), teamBaseIt->getAttackRange(), teamBaseIt->getDamage(), 0, 0);
+
+				m_predictedBuildings.push_back(enemyBase);
+			}
 		}
 	}
 
