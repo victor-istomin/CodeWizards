@@ -248,6 +248,7 @@
     <ClCompile Include="RemoteProcessClient.cpp" />
     <ClCompile Include="Runner.cpp" />
     <ClCompile Include="Strategy.cpp" />
+    <ClCompile Include="Utils.cpp" />
     <ClCompile Include="WorldMap.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -291,6 +292,7 @@
     <ClInclude Include="MyStrategy.h" />
     <ClInclude Include="NavigationMap.h" />
     <ClInclude Include="PathFinder.h" />
+    <ClInclude Include="Point2D.h" />
     <ClInclude Include="RemoteProcessClient.h" />
     <ClInclude Include="Runner.h" />
     <ClInclude Include="Strategy.h" />

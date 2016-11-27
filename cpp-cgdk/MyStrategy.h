@@ -68,6 +68,7 @@ struct State
 	static const double LOW_HP_FACTOR;
 
 	typedef std::vector<const model::Unit*> PointsVector;
+	typedef std::vector<PredictedUnit>      PredictedUnits;
 
 	const model::Wizard& m_self;
 	const model::World&  m_world;
@@ -75,8 +76,10 @@ struct State
 	const model::Move&   m_move;
 	const StorableState& m_storedState;
 	BonusSpawns          m_bonuses;
+	PredictedUnits       m_enemySpawnPredictions;
 	const MyStrategy*    m_strategy;
 
+	int    m_nextMinionRespawnTick;
 	double m_estimatedHP;
 	bool   m_isUnderMissile;
 	bool   m_isLowHP;
@@ -87,6 +90,7 @@ struct State
 	State(const MyStrategy* strategy, const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, const StorableState& m_oldState);
 	void updateProjectiles();
 	void updateBonuses();
+	void updatePredictions();
 
 	int lastBonusSpawnTick() const { return (m_world.getTickIndex() / m_game.getBonusAppearanceIntervalTicks()) * m_game.getBonusAppearanceIntervalTicks(); }
 	int nextBonusSpawnTick() const { return lastBonusSpawnTick() + m_game.getBonusAppearanceIntervalTicks(); }
@@ -186,9 +190,10 @@ public:
 
     void move(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move) override;
 
-	static auto getWizard(const model::Unit* unit)   { return dynamic_cast<const model::Wizard*>(unit); }
-	static auto getMinion(const model::Unit* unit)   { return dynamic_cast<const model::Minion*>(unit); }
-	static auto getBuilding(const model::Unit* unit) { return dynamic_cast<const model::Building*>(unit); }
+	static auto getWizard(const model::Unit* unit)    { return dynamic_cast<const model::Wizard*>(unit); }
+	static auto getMinion(const model::Unit* unit)    { return dynamic_cast<const model::Minion*>(unit); }
+	static auto getBuilding(const model::Unit* unit)  { return dynamic_cast<const model::Building*>(unit); }
+	static auto getPredicted(const model::Unit* unit) { return dynamic_cast<const PredictedUnit*>(unit); }
 
 	static bool isUnitSeeing(const model::Unit* unit, const Point2D& point);
 };

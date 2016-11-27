@@ -48,6 +48,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 	initState(self, world, game, move);
 	State::HistoryWriter updater(*m_state, m_oldState);
 	DebugMessage debugMessage(*m_visualizer, self, world);
+	debugMessage.visualizePredictions(m_state->m_enemySpawnPredictions);
 
 	/* test */
 	static bool bIsMapNeeded = false;
@@ -63,9 +64,20 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 
 	const LivingUnit* nearestTarget = getNearestTarget();
 
+	const Point2D enemyBase{ world.getWidth() - 400, 400 };
+	bool isBetweenSpawnAndCorner = false;
+	for (const PredictedUnit& spawn : m_state->m_enemySpawnPredictions)
+		isBetweenSpawnAndCorner = isBetweenSpawnAndCorner || enemyBase.getDistanceTo(self) < enemyBase.getDistanceTo(spawn)*1.2/*hack*/;
+
+	double spawnRadius = m_state->m_enemySpawnPredictions.empty() ? 1 : m_state->m_enemySpawnPredictions.front().getRadius();
+	int spawnTraversalTicks = (isBetweenSpawnAndCorner ? spawnRadius * 2 : spawnRadius) / m_state->m_game.getWizardStrafeSpeed();
+	int noSpawnSafeTicks = m_state->m_nextMinionRespawnTick - m_state->m_world.getTickIndex() - spawnTraversalTicks;
+
+	auto emptyPredictions = std::vector<PredictedUnit>();
 	auto dangerousEnemies = filterPointers<const model::Unit*>(
 		[&self, this](const model::Unit& u) {return isEnemy(u) && self.getDistanceTo(u) < getSafeDistance(u); },
-		world.getBuildings(), world.getWizards(), world.getMinions());
+		world.getBuildings(), world.getWizards(), world.getMinions(),
+		(noSpawnSafeTicks > 0 ? emptyPredictions : m_state->m_enemySpawnPredictions));
 
 	double totalEnemiesDamage = std::accumulate(dangerousEnemies.begin(), dangerousEnemies.end(), 0.0,
 		[this](double sum, const model::Unit* enemy) {return sum + getMaxDamage(enemy); });
@@ -609,6 +621,9 @@ void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage
 		std::for_each(world.getMinions().begin(), world.getMinions().end(),     findNearestEnemy);
 		std::for_each(world.getBuildings().begin(), world.getBuildings().end(), findNearestEnemy);
 
+		if (m_state->m_nextMinionRespawnTick - world.getTickIndex() < 100)
+			std::for_each(m_state->m_enemySpawnPredictions.begin(), m_state->m_enemySpawnPredictions.end(), findNearestEnemy);
+
 		bool isAlreadySafe = enemy == nullptr || enemy->getDistanceTo(self) > getSafeDistance(*enemy);
 		if (isAlreadySafe && !isToBonus)
 			return;  // don't retreat too far, except getting a bonus
@@ -708,6 +723,12 @@ double MyStrategy::getSafeDistance(const model::Unit& enemy)
 		safeDistance = selfRadius + building->getAttackRange();
 	}
 
+	const PredictedUnit* predicted = getPredicted(&enemy);
+	if (predicted)
+	{
+		safeDistance = predicted->safeDistance();
+	}
+
 	return safeDistance;
 }
 
@@ -724,6 +745,10 @@ double MyStrategy::getMaxDamage(const model::Unit* u) const
 	auto builing = getBuilding(u);
 	if (builing)
 		return getMaxDamage(*builing);
+
+	auto predictedUnit = getPredicted(u);
+	if (predictedUnit)
+		return predictedUnit->predictedDamage();
 
 	assert(false && "unknown unit type");
 	return m_state->m_game.getMagicMissileDirectDamage();
@@ -761,6 +786,8 @@ Vec2d MyStrategy::getAlternateMoveVector(const Vec2d& suggestion)
 	const Point2D tilesGap = Point2D(self.getRadius() * 4, self.getRadius() * 4);
 	Map::TileIndex topLeft = map->getTileIndex(selfPoint - tilesGap);
 	Map::TileIndex bottomRight = map->getTileIndex(selfPoint + tilesGap);
+
+	// todo: remove this in next sandbox iteration
 	for (int y = topLeft.m_y; y <= bottomRight.m_y; ++y)
 	{
 		for (int x = topLeft.m_x; x <= bottomRight.m_x; ++x)
@@ -769,7 +796,7 @@ Vec2d MyStrategy::getAlternateMoveVector(const Vec2d& suggestion)
 			if (!index.isValid(*map))
 				continue;
 
-			if (map->getTileState(index).isOccupied())
+			if (map->getTileState(index).isOccupied() && !map->getTileState(index).m_isVisible)
 			{
 				Point2D center = map->getTileCenter(index);
 				fakes.emplace_back(std::make_unique<model::Tree>(-1, center.m_x, center.m_y, 0, 0, 0, FACTION_OTHER, double(map->getTileSize()), 999, 999, std::vector<model::Status>()));
@@ -852,12 +879,14 @@ State::State(const MyStrategy* strategy, const model::Wizard& self, const model:
 	, m_bonuses(oldState.m_bonuses)
 	, m_strategy(strategy)
 	, m_estimatedHP(self.getLife())
+	, m_nextMinionRespawnTick(0)
 {
 	const auto& wizards = m_world.getWizards();
 	const Point2D selfPoint = self;
 
 	updateProjectiles(); // is under missile calculation
 	updateBonuses();
+	updatePredictions();
 
 	// todo: take into account all missiles
 	m_estimatedHP -= 0; // TODO - not yet ready     //m_isUnderMissile ? game.getMagicMissileDirectDamage() : 0;
@@ -1012,5 +1041,33 @@ void State::updateBonuses()
 
 		bonusSpawn.m_lastCheckTick = thisTick;
 	}
+}
+
+void State::updatePredictions()
+{
+	const double minionSpawnDxDy   = 800;
+	const double halfTileDxDy      = 200;
+	const double minionSpawnRadius = 250;
+	const double diagonal          = 1.3; // close to sqrt(2)
+	
+	const double predictedDamage = 2 * (m_game.getDartDirectDamage() + 3 * m_game.getOrcWoodcutterDamage());
+	const double safeDistance = m_game.getOrcWoodcutterAttackRange() + minionSpawnRadius + m_self.getRadius() + 2 * m_self.getRadius()/*safe gap*/;  // actually, there is also a dart, but it's not too dangerous
+	
+	model::Faction selfFaction = m_self.getFaction();
+	model::Faction enemyFaction = selfFaction == model::FACTION_ACADEMY ? model::FACTION_RENEGADES : model::FACTION_ACADEMY;
+
+	m_nextMinionRespawnTick = m_game.getFactionMinionAppearanceIntervalTicks() * (m_world.getTickIndex() / m_game.getFactionMinionAppearanceIntervalTicks() + 1);
+
+	m_enemySpawnPredictions.reserve(3);
+
+	const Point2D enemyCorner{ m_world.getWidth(), 0 };
+	m_enemySpawnPredictions.emplace_back(PredictedUnit(enemyCorner + Point2D(-minionSpawnDxDy - halfTileDxDy, halfTileDxDy), minionSpawnRadius, enemyFaction, m_nextMinionRespawnTick, predictedDamage, safeDistance));
+	m_enemySpawnPredictions.emplace_back(PredictedUnit(enemyCorner + Point2D(-halfTileDxDy, minionSpawnDxDy + halfTileDxDy), minionSpawnRadius, enemyFaction, m_nextMinionRespawnTick, predictedDamage, safeDistance));
+	m_enemySpawnPredictions.emplace_back(PredictedUnit(enemyCorner + Point2D(-minionSpawnDxDy / diagonal - halfTileDxDy, minionSpawnDxDy / diagonal + halfTileDxDy), minionSpawnRadius, enemyFaction, m_nextMinionRespawnTick, predictedDamage, safeDistance));
+
+// 	const Point2D teamCorner{ 0, m_world.getHeight() };
+// 	m_predictions.emplace_back(PredictedUnit(teamCorner + Point2D(minionSpawnDxDy + halfTileDxDy, -halfTileDxDy), minionSpawnRadius, selfFaction, m_nextMinionRespawnTick, predictedDamage, safeDistance));
+// 	m_predictions.emplace_back(PredictedUnit(teamCorner + Point2D(halfTileDxDy, -minionSpawnDxDy - halfTileDxDy), minionSpawnRadius, selfFaction, m_nextMinionRespawnTick, predictedDamage, safeDistance));
+// 	m_predictions.emplace_back(PredictedUnit(teamCorner + Point2D(minionSpawnDxDy / diagonal + halfTileDxDy, -minionSpawnDxDy / diagonal - halfTileDxDy), minionSpawnRadius, selfFaction, m_nextMinionRespawnTick, predictedDamage, safeDistance));
 }
 

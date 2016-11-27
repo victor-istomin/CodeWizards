@@ -114,6 +114,13 @@
 				m_debug.circle(bonus.m_point.m_x, bonus.m_point.m_y, bonus.m_state == BonusSpawn::HAS_BONUS ? confirmedColor : color);
 			}
 		}
+
+		void drawPredictions(const State::PredictedUnits& predictions)
+		{
+			const int color = 0x888833;
+			for (const PredictedUnit& unit : predictions)
+				m_debug.circle(unit.getX(), unit.getY(), unit.getRadius(), color);
+		}
 	};
 
 	class DebugMessage
@@ -127,11 +134,12 @@
 
 		const MyStrategy::TWaypointsMap* m_waypoints;
 		const BonusSpawns*               m_bonuses;
+		const State::PredictedUnits*     m_predictions;
  		std::tuple<PathFinder::TilesPath, Map::PointPath, const Map*> m_path;
 
 	public:
 		DebugMessage(DebugVisualizer& render, const model::Wizard& self, const model::World& world)
-			: m_render(render), m_self(self), m_world(world), m_waypoints(nullptr), m_bonuses(nullptr)
+			: m_render(render), m_self(self), m_world(world), m_waypoints(nullptr), m_bonuses(nullptr), m_predictions(nullptr)
 		{}
 
 		void setNextWaypoint(const Point2D& waypoint)                         { m_nextWaypoint = std::make_unique<Point2D>(waypoint); }
@@ -139,6 +147,7 @@
 		void visualizePath(const PathFinder::TilesPath& path, const Map* map) { m_path = std::make_tuple(path, map->smoothPath(m_world, map->tilesToPoints(path)), map); }
 		void visualizeWaypoints(const MyStrategy::TWaypointsMap& waypoints)   { m_waypoints = &waypoints; }
 		void visualizeBonuses(const BonusSpawns& bonuses)                     { m_bonuses = &bonuses; }
+		void visualizePredictions(const State::PredictedUnits& predictions)   { m_predictions = &predictions; }
 
 		~DebugMessage()
 		{
@@ -162,6 +171,9 @@
 
 			if (m_bonuses)
 				m_render.drawBonuses(*m_bonuses);
+
+			if (m_predictions)
+				m_render.drawPredictions(*m_predictions);
 
 			m_render.endPre();
 		}
@@ -187,6 +199,7 @@
 		void visualizePath(...)      {}
 		void visualizeWaypoints(...) {}
 		void visualizeBonuses(...)   {}
+		void visualizePredictions(...) {}
 	};
 
 #endif

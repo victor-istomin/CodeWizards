@@ -4,6 +4,7 @@
 #include <vector>
 #include <iterator>
 #include <string>
+#include "Point2D.h"
 
 class NonCopyable
 {
@@ -85,6 +86,7 @@ struct Timer
 };
 
 #endif
+#include "model\LivingUnit.h"
 
 #ifdef max
 #undef max
@@ -132,4 +134,29 @@ inline void hash_combine(std::size_t& seed, const T& v)
 	seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 }
 
+
+class PredictedUnit : public model::LivingUnit
+{
+	static const int UNIT_HEALTH = 100;
+	static const long long DEFAULT_ID = -1;
+	static long long s_lastId;
+
+	double m_predictedDamage;
+	int    m_expectedTick;
+	double m_safeDistance;
+
+public:
+	PredictedUnit(const Point2D& location, double radius, model::Faction faction, int expectedTick, double damage, double safeDistance)
+		: LivingUnit(s_lastId--, location.m_x, location.m_y, 0, 0, 0, faction, radius, UNIT_HEALTH, UNIT_HEALTH, std::vector<model::Status>())
+		, m_predictedDamage(damage)
+		, m_expectedTick(expectedTick)
+		, m_safeDistance(safeDistance)
+	{
+
+	}
+
+	double predictedDamage() const { return m_predictedDamage; }
+	int    expectedTick()    const { return m_expectedTick; }
+	double safeDistance()    const { return m_safeDistance; }
+};
 
