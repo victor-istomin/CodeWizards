@@ -141,13 +141,15 @@ class PredictedUnit : public model::LivingUnit
 	static const long long DEFAULT_ID = -1;
 	static long long s_lastId;
 
+	static const std::vector<model::Status> s_emptyStatus;
+
 	double m_predictedDamage;
 	int    m_expectedTick;
 	double m_safeDistance;
 
 public:
 	PredictedUnit(const Point2D& location, double radius, model::Faction faction, int expectedTick, double damage, double safeDistance)
-		: LivingUnit(s_lastId--, location.m_x, location.m_y, 0, 0, 0, faction, radius, UNIT_HEALTH, UNIT_HEALTH, std::vector<model::Status>())
+		: LivingUnit(s_lastId--, location.m_x, location.m_y, 0, 0, 0, faction, radius, UNIT_HEALTH, UNIT_HEALTH, s_emptyStatus)
 		, m_predictedDamage(damage)
 		, m_expectedTick(expectedTick)
 		, m_safeDistance(safeDistance)

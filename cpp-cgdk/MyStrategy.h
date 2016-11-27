@@ -11,6 +11,7 @@
 
 #include "Strategy.h"
 #include "model/LaneType.h"
+#include "model/Building.h"
 #include "LineEquation.h"
 #include "Map.h"
 #include "PathFinder.h"
