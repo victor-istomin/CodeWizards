@@ -31,6 +31,14 @@ struct BonusSpawn
 		NO_BONUS,
 	};
 
+	struct WizardsHealth
+	{
+		double enemies;
+		double teammates;
+
+		WizardsHealth() : enemies(0), teammates(0) {}
+	};
+
 	Point2D    m_point;
 	BonusState m_state;          // true if someone has collected bonus
 	int        m_lastCheckTick;
@@ -39,6 +47,7 @@ struct BonusSpawn
 
 	Map::PointPath m_smoothPathCache;
 	Map::TilesPath m_tilesPathCache;
+	WizardsHealth  m_wizardsHp;
 
 	static const size_t  COUNT = 2;
 	static const Point2D RESPAWN_POINTS[];
