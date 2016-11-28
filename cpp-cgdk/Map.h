@@ -3,7 +3,6 @@
 #include <list>
 #include <cmath>
 #include <algorithm>
-#include <cassert>
 #include <iterator>
 #include <limits>
 
@@ -13,6 +12,13 @@
 
 #include "LineEquation.h"
 #include "Utils.h"
+
+#ifndef _DEBUG
+#  ifndef NDEBUG
+#    define NDEBUG
+#  endif
+#endif
+#include <cassert>
 
 struct TileState
 {
