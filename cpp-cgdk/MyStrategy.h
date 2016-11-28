@@ -66,9 +66,11 @@ class MyStrategy;
 struct State
 {
 	static const double LOW_HP_FACTOR;
+	static const int    COOLDOWN_INF = 0xFFFF;
 
 	typedef std::vector<const model::Unit*> PointsVector;
 	typedef std::vector<PredictedUnit>      PredictedUnits;
+	typedef std::vector<model::SkillType>   Skills;
 
 	const model::Wizard& m_self;
 	const model::World&  m_world;
@@ -77,20 +79,24 @@ struct State
 	const StorableState& m_storedState;
 	BonusSpawns          m_bonuses;
 	PredictedUnits       m_enemySpawnPredictions;
+	Skills               m_learnedSkills;
 	const MyStrategy*    m_strategy;
 
 	int    m_nextMinionRespawnTick;
 	double m_estimatedHP;
 	bool   m_isUnderMissile;
 	bool   m_isLowHP;
+	bool   m_isHastened;
 	bool   m_isGoingToBonus;  // not yet implemented, always false
 
 	std::array<int, model::_ACTION_COUNT_> m_cooldownTicks;
 
 	State(const MyStrategy* strategy, const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, const StorableState& m_oldState);
+
 	void updateProjectiles();
 	void updateBonuses();
 	void updatePredictions();
+	void updateSkillsAndActions();
 
 	int lastBonusSpawnTick() const { return (m_world.getTickIndex() / m_game.getBonusAppearanceIntervalTicks()) * m_game.getBonusAppearanceIntervalTicks(); }
 	int nextBonusSpawnTick() const { return lastBonusSpawnTick() + m_game.getBonusAppearanceIntervalTicks(); }
@@ -128,6 +134,8 @@ class MyStrategy : public Strategy
 public:
 	typedef std::vector<Point2D>      TWaypoints;
 	typedef std::map<model::LaneType, TWaypoints> TWaypointsMap;
+
+	static const model::SkillType SKILLS_TO_LEARN[];
 
 private:
 
@@ -184,6 +192,8 @@ private:
 	bool isEnemy(const model::Unit& u) const  { return u.getFaction() != model::FACTION_NEUTRAL && u.getFaction() != m_state->m_self.getFaction(); }
 
 	Vec2d getAlternateMoveVector(const Vec2d& suggestion);
+
+	void learnSkill(model::Move& move);
 
 public:
     MyStrategy();
