@@ -68,6 +68,27 @@ struct State
 	static const double LOW_HP_FACTOR;
 	static const int    COOLDOWN_INF = 0xFFFF;
 
+	struct Disposition
+	{
+		int enemyWizards;
+		int enemyMinions;
+		int enemyBuildings;
+		int teammateWizards;
+		int teammateMinions;
+		int teammateBuildings;
+
+		double movableEnemyHP;
+		double movebleTeammatesHP;
+
+		Disposition() 
+			: enemyWizards(0), enemyMinions(0), enemyBuildings(0), movableEnemyHP(0.0)
+			, teammateWizards(0), teammateMinions(0), teammateBuildings(0), movebleTeammatesHP(0.0) {}
+
+		int enemiesTotal() const   { return enemyWizards + enemyBuildings + enemyMinions; }
+		int teammatesCount() const { return teammateWizards + teammateBuildings + teammateMinions; }
+	};
+
+
 	typedef std::vector<const model::Unit*> PointsVector;
 	typedef std::vector<PredictedUnit>      PredictedUnits;
 	typedef std::vector<model::SkillType>   Skills;
@@ -80,6 +101,7 @@ struct State
 	BonusSpawns          m_bonuses;
 	PredictedUnits       m_enemySpawnPredictions;
 	Skills               m_learnedSkills;
+	Disposition          m_disposionAround;
 	const MyStrategy*    m_strategy;
 
 	int    m_nextMinionRespawnTick;
@@ -97,6 +119,7 @@ struct State
 	void updateBonuses();
 	void updatePredictions();
 	void updateSkillsAndActions();
+	void updateDispositionAround();
 
 	int lastBonusSpawnTick() const { return (m_world.getTickIndex() / m_game.getBonusAppearanceIntervalTicks()) * m_game.getBonusAppearanceIntervalTicks(); }
 	int nextBonusSpawnTick() const { return lastBonusSpawnTick() + m_game.getBonusAppearanceIntervalTicks(); }
@@ -136,10 +159,10 @@ public:
 	typedef std::map<model::LaneType, TWaypoints> TWaypointsMap;
 
 	static const model::SkillType SKILLS_TO_LEARN[];
+	static const double WAYPOINT_RADIUS;
 
 private:
 
-	static const double WAYPOINT_RADIUS;
 	static const int    STRAFE_CHANGE_INTERVAL = 4; // don't change strafe too often
 
 	static Point2D      TOP_GUARD_POINT;
@@ -183,7 +206,6 @@ private:
 
 	void tryDisengage(model::Move &move);
 
-	double getSafeDistance(const model::Unit& enemy);
 
 	double getMaxDamage(const model::Unit* u) const;
 	template <typename UnitType> double getMaxDamage(const UnitType& u) const      { return u.getDamage(); }
@@ -199,6 +221,8 @@ public:
     MyStrategy();
 
     void move(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move) override;
+
+	double getSafeDistance(const model::Unit& enemy) const;
 
 	static auto getWizard(const model::Unit* unit)    { return dynamic_cast<const model::Wizard*>(unit); }
 	static auto getMinion(const model::Unit* unit)    { return dynamic_cast<const model::Minion*>(unit); }

@@ -101,8 +101,11 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 		m_state->m_isLowHP = true;  // this also activates "don't retreat too far" feature
 	}
 
+	double relativeEnemiesAmount = m_state->m_disposionAround.movableEnemyHP / m_state->m_disposionAround.movebleTeammatesHP;
+	bool isEnemyRushing = relativeEnemiesAmount >= 2.0 && m_state->m_disposionAround.enemyWizards != 0;  // TODO - take teammate towers into account?
+
 	// Если осталось мало жизненной энергии, отступаем к предыдущей ключевой точке на линии.
-	bool isRetreating = isTooCloseToEnemy || m_state->m_isLowHP;
+	bool isRetreating = isTooCloseToEnemy || m_state->m_isLowHP || isEnemyRushing;
 	if (isRetreating) 
 	{
 		// TODO - consider retreating to most safe point both in case of bonus or not bonus
@@ -146,7 +149,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 			// ... то поворачиваемся к цели.
 			move.setTurn(angle);
 
-			bool isWizard = getWizard(nearestTarget);
+			bool isWizard = getWizard(nearestTarget) != nullptr;
 			if (isWizard && !isRetreating)
 			{
 				// might escape. This is workaround
@@ -727,7 +730,7 @@ void MyStrategy::tryDisengage(model::Move &move)
 	}
 }
 
-double MyStrategy::getSafeDistance(const model::Unit& enemy)
+double MyStrategy::getSafeDistance(const model::Unit& enemy) const
 {
 	double safeDistance = m_state->m_game.getFactionBaseAttackRange();
 	double selfRadius   = m_state->m_self.getRadius();
@@ -934,6 +937,7 @@ State::State(const MyStrategy* strategy, const model::Wizard& self, const model:
 	updateBonuses();
 	updatePredictions();
 	updateSkillsAndActions();
+	updateDispositionAround();
 
 	auto statuses = m_self.getStatuses();
 	m_isHastened = statuses.end() != std::find_if(statuses.begin(), statuses.end(), [](const model::Status& s) { return s.getType() == model::STATUS_HASTENED; });
@@ -991,6 +995,55 @@ void State::updateSkillsAndActions()
 		if (m_self.getMana() < actionInfo.manaCost)
 			cooldown = std::max<int>(cooldown, (actionInfo.manaCost - m_self.getMana()) / m_game.getWizardBaseManaRegeneration() + 1);  // TODO - take levelup-ed mana regeneration speed into account 
 	}
+}
+
+
+void State::updateDispositionAround()
+{
+	Point2D selfPoint = m_self;
+	Point2D basePoint{ 400.0, 400.0 };
+
+	auto isUnitNear = [this, &selfPoint, &basePoint](const model::LivingUnit& unit)
+	{
+		double distance = selfPoint.getDistanceTo(unit);
+		if (unit.getFaction() == m_self.getFaction())
+		{
+			// teammates has penalty if they are closer to base than me
+
+			const double BACK_TEAMMATE_PENALTY = 0.5;
+			const double epsilon = 400;
+
+			if (basePoint.getDistanceTo(selfPoint) - basePoint.getDistanceTo(unit) > epsilon)
+				distance /= BACK_TEAMMATE_PENALTY;
+		}
+
+		return distance < m_strategy->getSafeDistance(unit);
+	};
+
+	auto applyDisposition = [this, isUnitNear](const model::LivingUnit& unit)
+	{
+		if (!isUnitNear(unit))
+			return;
+
+		auto wizard = m_strategy->getWizard(&unit);
+		auto minion = m_strategy->getMinion(&unit);
+		auto builing = m_strategy->getBuilding(&unit);
+		bool isTeammate = m_self.getFaction() == unit.getFaction();
+
+		if (wizard != nullptr)
+			(isTeammate ? m_disposionAround.teammateWizards : m_disposionAround.enemyWizards) += 1;
+		else if (minion != nullptr)
+			(isTeammate ? m_disposionAround.teammateMinions : m_disposionAround.enemyMinions) += 1;
+		else if (builing != nullptr)
+			(isTeammate ? m_disposionAround.teammateBuildings : m_disposionAround.teammateBuildings) += 1;
+
+		if (wizard != nullptr || minion != nullptr)
+			(isTeammate ? m_disposionAround.movebleTeammatesHP : m_disposionAround.movableEnemyHP) += unit.getLife();
+	};
+
+	std::for_each(m_world.getWizards().begin(), m_world.getWizards().end(), applyDisposition);
+	std::for_each(m_world.getBuildings().begin(), m_world.getBuildings().end(), applyDisposition);
+	std::for_each(m_world.getMinions().begin(), m_world.getMinions().end(), applyDisposition);
 }
 
 //////////////////////////////////////////////////////////////////////////
