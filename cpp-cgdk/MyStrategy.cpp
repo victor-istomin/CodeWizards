@@ -74,22 +74,8 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 
 	const LivingUnit* nearestTarget = getNearestTarget();
 
-	const Point2D enemyBase{ world.getWidth() - 400, 400 };
-	bool isBetweenSpawnAndCorner = false;
-	for (const PredictedUnit& spawn : m_state->m_enemySpawnPredictions)
-		isBetweenSpawnAndCorner = isBetweenSpawnAndCorner || enemyBase.getDistanceTo(self) < enemyBase.getDistanceTo(spawn)*1.2/*hack*/;
-
-	double spawnRadius = m_state->m_enemySpawnPredictions.empty() ? 1 : m_state->m_enemySpawnPredictions.front().getRadius();
-	int spawnTraversalTicks = (isBetweenSpawnAndCorner ? spawnRadius * 2 : spawnRadius) / m_state->m_game.getWizardStrafeSpeed();
-	int noSpawnSafeTicks = m_state->m_nextMinionRespawnTick - m_state->m_world.getTickIndex() - spawnTraversalTicks;
-
-	auto emptyPredictions = std::vector<PredictedUnit>();
-	auto dangerousEnemies = filterPointers<const model::LivingUnit*>(
-		[&self, this](const model::Unit& u) {return isEnemy(u) && self.getDistanceTo(u) < getSafeDistance(u); },
-		world.getBuildings(), world.getWizards(), world.getMinions(),
-		(noSpawnSafeTicks > 0 ? emptyPredictions : m_state->m_enemySpawnPredictions));
-
-	double totalEnemiesDamage = std::accumulate(dangerousEnemies.begin(), dangerousEnemies.end(), 0.0,
+	auto dangerousEnemies = getDangerousEnemies();
+	double totalEnemiesDamage = std::accumulate(dangerousEnemies.begin(), dangerousEnemies.end(), 0.0, 
 		[this](double sum, const model::Unit* enemy) {return sum + getMaxDamage(enemy); });
 
 	bool isNearOrk = dangerousEnemies.end() != std::find_if(dangerousEnemies.begin(), dangerousEnemies.end(),
@@ -101,9 +87,10 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 		m_state->m_isLowHP = true;  // this also activates "don't retreat too far" feature
 	}
 
-	double relativeEnemiesAmount = m_state->m_disposionAround.movableEnemyHP / m_state->m_disposionAround.movebleTeammatesHP;
-	const double rushHpThreshold = m_state->m_disposionAround.teammateMinions != 0 ? 3.0 : 2.0;
-	bool isEnemyRushing = relativeEnemiesAmount >= 2.0 && m_state->m_disposionAround.enemyWizards != 0;  // TODO - take teammate towers into account?
+	const State::Disposition& around = m_state->m_disposionAround;
+	double relativeEnemiesAmount = around.movableEnemyHP / around.movebleTeammatesHP;
+	const double rushHpThreshold = around.teammateMinions != 0 ? 3.0 : 2.0;
+	bool isEnemyRushing = relativeEnemiesAmount >= 2.0 && around.enemyWizards != 0;  // TODO - take teammate towers into account?
 
 	// Если осталось мало жизненной энергии, отступаем к предыдущей ключевой точке на линии.
 	bool isRetreating = isTooCloseToEnemy || m_state->m_isLowHP || isEnemyRushing;
@@ -312,6 +299,26 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 			move.setTurn(angle);
 		}
 	}
+}
+
+std::vector<const model::LivingUnit*> MyStrategy::getDangerousEnemies() const
+{
+	const Point2D enemyBase{ m_state->m_world.getWidth() - 400, 400 };
+	bool isBetweenSpawnAndCorner = false;
+	for (const PredictedUnit& spawn : m_state->m_enemySpawnPredictions)
+		isBetweenSpawnAndCorner = isBetweenSpawnAndCorner || enemyBase.getDistanceTo(m_state->m_self) < enemyBase.getDistanceTo(spawn)*1.2/*hack*/;
+
+	double spawnRadius = m_state->m_enemySpawnPredictions.empty() ? 1 : m_state->m_enemySpawnPredictions.front().getRadius();
+	int spawnTraversalTicks = static_cast<int>((isBetweenSpawnAndCorner ? spawnRadius * 2 : spawnRadius) / m_state->m_game.getWizardStrafeSpeed());
+	int noSpawnSafeTicks = m_state->m_nextMinionRespawnTick - m_state->m_world.getTickIndex() - spawnTraversalTicks;
+
+	auto emptyPredictions = std::vector<PredictedUnit>();
+	auto dangerousEnemies = filterPointers<const model::LivingUnit*>(
+		[this](const model::Unit& u) {return isEnemy(u) && m_state->m_self.getDistanceTo(u) < getSafeDistance(u); },
+		m_state->m_world.getBuildings(), m_state->m_world.getWizards(), m_state->m_world.getMinions(),
+		(noSpawnSafeTicks > 0 ? emptyPredictions : m_state->m_enemySpawnPredictions));
+
+	return std::move(dangerousEnemies);
 }
 
 bool MyStrategy::isUnitSeeing(const model::Unit* unit, const Point2D& point)
@@ -578,7 +585,7 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 	for (BonusSpawn& spawn : m_state->m_bonuses)
 	{
 		if (spawn.m_point.getDistanceTo(self) > MAX_TRAVEL_DISTANCE)
-			continue;  // path can't be shorter than strainght line
+			continue;  // path can't be shorter than straight line
 
 		const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
 		spawn.m_smoothPathCache = getSmoothPathTo(spawn.m_point, map, spawn.m_tilesPathCache);
@@ -982,7 +989,7 @@ void MyStrategy::learnSkill(model::Move& move)
 	const int skillsTotal = std::extent<decltype(SKILLS_TO_LEARN)>::value;
 
 	int nextSkill = level - 1;
-	if (nextSkill > 0 && m_state->m_self.getSkills().size() < nextSkill)
+	if (nextSkill > 0 && int(m_state->m_self.getSkills().size()) < nextSkill)
 	{
 		// for case when got 2 levelups at onCe
 		int previousSkill = std::max(0, nextSkill - 1);
@@ -1122,7 +1129,7 @@ void State::updateDispositionAround()
 		else if (minion != nullptr)
 			(isTeammate ? m_disposionAround.teammateMinions : m_disposionAround.enemyMinions) += 1;
 		else if (builing != nullptr)
-			(isTeammate ? m_disposionAround.teammateBuildings : m_disposionAround.teammateBuildings) += 1;
+			(isTeammate ? m_disposionAround.teammateBuildings : m_disposionAround.enemyBuildings) += 1;
 
 		if (wizard != nullptr || minion != nullptr)
 			(isTeammate ? m_disposionAround.movebleTeammatesHP : m_disposionAround.movableEnemyHP) += unit.getLife();

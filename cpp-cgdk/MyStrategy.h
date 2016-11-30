@@ -223,6 +223,7 @@ private:
 	bool isEnemy(const model::Unit& u) const  { return u.getFaction() != model::FACTION_NEUTRAL && u.getFaction() != m_state->m_self.getFaction(); }
 
 	Vec2d getAlternateMoveVector(const Vec2d& suggestion);
+	std::vector<const model::LivingUnit*> getDangerousEnemies() const;
 
 	void learnSkill(model::Move& move);
 
@@ -230,6 +231,7 @@ public:
     MyStrategy();
 
     void move(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move) override;
+
 
 	double getSafeDistance(const model::Unit& enemy) const;
 
