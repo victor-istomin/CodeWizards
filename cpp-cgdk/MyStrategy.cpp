@@ -295,9 +295,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 		const int prepareTicks = m_state->m_game.getFactionMinionAppearanceIntervalTicks()
 			+ (m_guardPoint->getDistanceTo(MID_GUARD_POINT) < Point2D::k_epsilon ? 200 : 100);
 
-		// *** debug code
-		// TODO: maybe omit
-		bool isRushTime = true; // (m_state->m_world.getTickIndex() > prepareTicks);
+		bool isRushTime = (m_state->m_world.getTickIndex() > prepareTicks);
 		if (!isRushTime && m_guardPoint->getDistanceTo(self) < WAYPOINT_RADIUS)
 			nextWaypoint = *m_guardPoint;
 
