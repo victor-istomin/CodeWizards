@@ -84,6 +84,12 @@ private:
 	TBuffer m_aux;
 };
 
+#ifndef _DEBUG
+#  ifndef NDEBUG
+#    define NDEBUG
+#  endif
+#endif
+
 #include <cassert>
 inline void testFringe()
 {

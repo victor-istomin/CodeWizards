@@ -134,6 +134,12 @@ inline void hash_combine(std::size_t& seed, const T& v)
 	seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 }
 
+template <typename Container, typename Value>
+inline bool has(const Container& container, const Value& value)
+{
+	return std::end(container) != std::find(std::begin(container), std::end(container), value);
+}
+
 
 class PredictedUnit : public model::LivingUnit
 {

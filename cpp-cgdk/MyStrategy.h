@@ -75,9 +75,32 @@ class MyStrategy;
 struct State
 {
 	static const double LOW_HP_FACTOR;
+	static const int    COOLDOWN_INF = 0xFFFF;
+
+	struct Disposition
+	{
+		int enemyWizards;
+		int enemyMinions;
+		int enemyBuildings;
+		int teammateWizards;
+		int teammateMinions;
+		int teammateBuildings;
+
+		double movableEnemyHP;
+		double movebleTeammatesHP;
+
+		Disposition() 
+			: enemyWizards(0), enemyMinions(0), enemyBuildings(0), movableEnemyHP(0.0)
+			, teammateWizards(0), teammateMinions(0), teammateBuildings(0), movebleTeammatesHP(0.0) {}
+
+		int enemiesTotal() const   { return enemyWizards + enemyBuildings + enemyMinions; }
+		int teammatesCount() const { return teammateWizards + teammateBuildings + teammateMinions; }
+	};
+
 
 	typedef std::vector<const model::Unit*> PointsVector;
 	typedef std::vector<PredictedUnit>      PredictedUnits;
+	typedef std::vector<model::SkillType>   Skills;
 
 	const model::Wizard& m_self;
 	const model::World&  m_world;
@@ -86,20 +109,26 @@ struct State
 	const StorableState& m_storedState;
 	BonusSpawns          m_bonuses;
 	PredictedUnits       m_enemySpawnPredictions;
+	Skills               m_learnedSkills;
+	Disposition          m_disposionAround;
 	const MyStrategy*    m_strategy;
 
 	int    m_nextMinionRespawnTick;
 	double m_estimatedHP;
 	bool   m_isUnderMissile;
 	bool   m_isLowHP;
+	bool   m_isHastened;
 	bool   m_isGoingToBonus;  // not yet implemented, always false
 
 	std::array<int, model::_ACTION_COUNT_> m_cooldownTicks;
 
 	State(const MyStrategy* strategy, const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, const StorableState& m_oldState);
+
 	void updateProjectiles();
 	void updateBonuses();
 	void updatePredictions();
+	void updateSkillsAndActions();
+	void updateDispositionAround();
 
 	int lastBonusSpawnTick() const { return (m_world.getTickIndex() / m_game.getBonusAppearanceIntervalTicks()) * m_game.getBonusAppearanceIntervalTicks(); }
 	int nextBonusSpawnTick() const { return lastBonusSpawnTick() + m_game.getBonusAppearanceIntervalTicks(); }
@@ -138,9 +167,11 @@ public:
 	typedef std::vector<Point2D>      TWaypoints;
 	typedef std::map<model::LaneType, TWaypoints> TWaypointsMap;
 
+	static const model::SkillType SKILLS_TO_LEARN[];
+	static const double WAYPOINT_RADIUS;
+
 private:
 
-	static const double WAYPOINT_RADIUS;
 	static const int    STRAFE_CHANGE_INTERVAL = 4; // don't change strafe too often
 
 	static Point2D      TOP_GUARD_POINT;
@@ -184,7 +215,6 @@ private:
 
 	void tryDisengage(model::Move &move);
 
-	double getSafeDistance(const model::Unit& enemy);
 
 	double getMaxDamage(const model::Unit* u) const;
 	template <typename UnitType> double getMaxDamage(const UnitType& u) const      { return u.getDamage(); }
@@ -194,10 +224,14 @@ private:
 
 	Vec2d getAlternateMoveVector(const Vec2d& suggestion);
 
+	void learnSkill(model::Move& move);
+
 public:
     MyStrategy();
 
     void move(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move) override;
+
+	double getSafeDistance(const model::Unit& enemy) const;
 
 	static auto getWizard(const model::Unit* unit)    { return dynamic_cast<const model::Wizard*>(unit); }
 	static auto getMinion(const model::Unit* unit)    { return dynamic_cast<const model::Minion*>(unit); }
@@ -205,6 +239,12 @@ public:
 	static auto getPredicted(const model::Unit* unit) { return dynamic_cast<const PredictedUnit*>(unit); }
 
 	static bool isUnitSeeing(const model::Unit* unit, const Point2D& point);
+
+	static bool hasStatus(const model::Wizard* unit, model::StatusType status)
+	{ 
+		const auto& ss = unit->getStatuses(); 
+		return ss.end() != std::find_if(ss.begin(), ss.end(), [status](const auto& active) { return active.getType() == status; });
+	}
 };
 
 template <> inline double MyStrategy::getMaxDamage<model::Wizard>(const model::Wizard& u) const { return m_state->m_game.getMagicMissileDirectDamage(); };  // TODO - calculate
