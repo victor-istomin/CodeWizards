@@ -1004,20 +1004,19 @@ void State::updateSkillsAndActions()
 void State::updateDispositionAround()
 {
 	Point2D selfPoint = m_self;
-	Point2D basePoint{ 400.0, 400.0 };
 
-	auto isUnitNear = [this, &selfPoint, &basePoint](const model::LivingUnit& unit)
+	auto isUnitNear = [this, &selfPoint](const model::LivingUnit& unit)
 	{
 		double distance = selfPoint.getDistanceTo(unit);
 		if (unit.getFaction() == m_self.getFaction())
 		{
 			// teammates has penalty if they are closer to base than me
+			bool isAtFrontOfMe = std::abs(m_self.getAngleTo(unit) <= PI / 2);
 
-			const double BACK_TEAMMATE_PENALTY = 0.5;
-			const double epsilon = 400;
+			const double BACK_TEAMMATE_PENALTY = 3;
 
-			if (basePoint.getDistanceTo(selfPoint) - basePoint.getDistanceTo(unit) > epsilon)
-				distance /= BACK_TEAMMATE_PENALTY;
+			if (!isAtFrontOfMe)
+				distance *= BACK_TEAMMATE_PENALTY;
 		}
 
 		return distance < m_strategy->getSafeDistance(unit);
