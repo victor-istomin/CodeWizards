@@ -501,6 +501,9 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 
 	for (BonusSpawn& spawn : m_state->m_bonuses)
 	{
+		if (spawn.m_point.getDistanceTo(self) > MAX_TRAVEL_DISTANCE)
+			continue;  // path can't be shorter than strainght line
+
 		const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
 		spawn.m_smoothPathCache = getSmoothPathTo(spawn.m_point, map, spawn.m_tilesPathCache);
 
