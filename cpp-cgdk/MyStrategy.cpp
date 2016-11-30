@@ -102,6 +102,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 	}
 
 	double relativeEnemiesAmount = m_state->m_disposionAround.movableEnemyHP / m_state->m_disposionAround.movebleTeammatesHP;
+	const double rushHpThreshold = m_state->m_disposionAround.teammateMinions != 0 ? 3.0 : 2.0;
 	bool isEnemyRushing = relativeEnemiesAmount >= 2.0 && m_state->m_disposionAround.enemyWizards != 0;  // TODO - take teammate towers into account?
 
 	// Если осталось мало жизненной энергии, отступаем к предыдущей ключевой точке на линии.
@@ -216,7 +217,9 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 		const int prepareTicks = m_state->m_game.getFactionMinionAppearanceIntervalTicks()
 			+ (m_guardPoint->getDistanceTo(MID_GUARD_POINT) < Point2D::k_epsilon ? 200 : 100);
 
-		bool isRushTime = (m_state->m_world.getTickIndex() > prepareTicks);
+		// *** debug code
+		// TODO: maybe omit
+		bool isRushTime = true; // (m_state->m_world.getTickIndex() > prepareTicks);
 		if (!isRushTime && m_guardPoint->getDistanceTo(self) < WAYPOINT_RADIUS)
 			nextWaypoint = *m_guardPoint;
 
@@ -347,6 +350,7 @@ void MyStrategy::initialSetup()
 void MyStrategy::initState(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move)
 {
 	m_state = std::make_unique<State>(this, self, world, game, move, m_oldState);
+	m_state->updateDispositionAround();
 
 	if (m_waypoints.empty())
 	{
@@ -937,7 +941,6 @@ State::State(const MyStrategy* strategy, const model::Wizard& self, const model:
 	updateBonuses();
 	updatePredictions();
 	updateSkillsAndActions();
-	updateDispositionAround();
 
 	auto statuses = m_self.getStatuses();
 	m_isHastened = statuses.end() != std::find_if(statuses.begin(), statuses.end(), [](const model::Status& s) { return s.getType() == model::STATUS_HASTENED; });
