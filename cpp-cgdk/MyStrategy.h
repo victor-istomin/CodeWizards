@@ -230,6 +230,12 @@ public:
 	static auto getPredicted(const model::Unit* unit) { return dynamic_cast<const PredictedUnit*>(unit); }
 
 	static bool isUnitSeeing(const model::Unit* unit, const Point2D& point);
+
+	static bool hasStatus(const model::Wizard* unit, model::StatusType status)
+	{ 
+		const auto& ss = unit->getStatuses(); 
+		return ss.end() != std::find_if(ss.begin(), ss.end(), [status](const auto& active) { return active.getType() == status; });
+	}
 };
 
 template <> inline double MyStrategy::getMaxDamage<model::Wizard>(const model::Wizard& u) const { return m_state->m_game.getMagicMissileDirectDamage(); };  // TODO - calculate
