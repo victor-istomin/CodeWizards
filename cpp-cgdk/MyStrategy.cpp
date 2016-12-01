@@ -582,6 +582,8 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 	const BonusSpawn* nearest = nullptr;
 	double minPathDistance = std::numeric_limits<double>::infinity();
 
+	auto enemiesAround = getDangerousEnemies();
+
 	for (BonusSpawn& spawn : m_state->m_bonuses)
 	{
 		if (spawn.m_point.getDistanceTo(self) > MAX_TRAVEL_DISTANCE)
@@ -589,6 +591,19 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 
 		const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
 		spawn.m_smoothPathCache = getSmoothPathTo(spawn.m_point, map, spawn.m_tilesPathCache);
+		const Point2D nextStepPoint = spawn.m_smoothPathCache.empty() ? spawn.m_point : spawn.m_smoothPathCache.front();
+
+		auto isEnemyInBetweenPredicate = [&self, &nextStepPoint](const model::LivingUnit* enemy)
+		{
+			static const double THRESHOLD = PI / 3.0;
+			return std::abs(self.getAngleTo(*enemy) - self.getAngleTo(nextStepPoint.m_x, nextStepPoint.m_y)) < THRESHOLD;
+		};
+
+		double betweenEnemiesHp = std::accumulate(enemiesAround.begin(), enemiesAround.end(), 0.0,
+			[&isEnemyInBetweenPredicate](double summ, const model::LivingUnit* enemy) { return summ + (isEnemyInBetweenPredicate(enemy) ? enemy->getLife() : 0.0); });
+
+		if (self.getLife() < betweenEnemiesHp)
+			continue;  // "do it or die" is not too reasonable
 
 		double currentDistance = getPathLength(spawn.m_smoothPathCache) + spawn.m_dangerHandicap;
 
@@ -746,7 +761,7 @@ void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage
 			return;  // don't retreat too far, except getting a bonus
 	}
 
-	if (!m_state->m_isHastened && m_state->isReadyForAction(ACTION_HASTE))
+	if (!m_state->m_isHastened && m_state->isReadyForAction(ACTION_HASTE) && m_state->m_self.getLife() != m_state->m_self.getMaxLife())
 	{
 		move.setAction(ACTION_HASTE);
 		move.setStatusTargetId(m_state->m_self.getId());
@@ -1245,14 +1260,15 @@ void State::updateBonuses()
 				&& spawn.m_point.getDistanceTo(*wizard) < NEAR_DISTANCE;
 		});
 
-		spawn.m_wizardsHp = BonusSpawn::WizardsHealth();
-		for (const model::Wizard& wizard : m_world.getWizards())
-		{
-			if (wizard.getFaction() == m_self.getFaction())
-				spawn.m_wizardsHp.teammates += wizard.getLife();
-			else 
-				spawn.m_wizardsHp.enemies += wizard.getLife();
-		}
+// maybe, bad idea
+// 		spawn.m_wizardsHp = BonusSpawn::WizardsHealth();
+// 		for (const model::Wizard& wizard : m_world.getWizards())
+// 		{
+// 			if (wizard.getFaction() == m_self.getFaction())
+// 				spawn.m_wizardsHp.teammates += wizard.getLife();
+// 			else 
+// 				spawn.m_wizardsHp.enemies += wizard.getLife();
+// 		}
 
 		spawn.m_smoothPathCache.clear();
 		spawn.m_tilesPathCache.clear();

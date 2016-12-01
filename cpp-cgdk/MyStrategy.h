@@ -47,7 +47,7 @@ struct BonusSpawn
 
 	Map::PointPath m_smoothPathCache;
 	Map::TilesPath m_tilesPathCache;
-	WizardsHealth  m_wizardsHp;
+// 	WizardsHealth  m_wizardsHp;   // maybe, bad idea
 
 	static const size_t  COUNT = 2;
 	static const Point2D RESPAWN_POINTS[];
