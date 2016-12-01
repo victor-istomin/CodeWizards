@@ -11,9 +11,11 @@
 
 #include "Strategy.h"
 #include "model/LaneType.h"
+#include "model/Projectile.h"
 #include "LineEquation.h"
 #include "Map.h"
 #include "PathFinder.h"
+#include "vec.h"
 
 #include <memory>
 #include <vector>
@@ -61,8 +63,27 @@ typedef std::array<BonusSpawn, BonusSpawn::COUNT> BonusSpawns;
 
 struct StorableState
 {
-	std::unique_ptr<model::Move>  m_previousMove;
+	struct ProjectileInfo
+	{
+		long long m_id;
+		int       m_detectionTick;
+		Point2D   m_detectionPoint;
+		Vec2d     m_speed;
+
+		ProjectileInfo(const model::Projectile& p, int tick) 
+			: m_id(p.getId()), m_detectionTick(tick), m_detectionPoint(p), m_speed(p.getSpeedX(), p.getSpeedY()) 
+		{}
+
+		friend bool operator==(const ProjectileInfo& a, const model::Projectile& b);
+		friend bool operator==(const model::Projectile& a, const ProjectileInfo& b);
+	};
+
+	typedef std::vector<ProjectileInfo>  Projectiles;
+	typedef std::unique_ptr<model::Move> MovePtr;
+
+	MovePtr     m_previousMove;
 	BonusSpawns m_bonuses; 
+	Projectiles m_projectiles;
 
 	StorableState() 
 		: m_previousMove()
@@ -97,10 +118,10 @@ struct State
 		int teammatesCount() const { return teammateWizards + teammateBuildings + teammateMinions; }
 	};
 
-
 	typedef std::vector<const model::Unit*> PointsVector;
 	typedef std::vector<PredictedUnit>      PredictedUnits;
 	typedef std::vector<model::SkillType>   Skills;
+	typedef StorableState::Projectiles      Projectiles;
 
 	const model::Wizard& m_self;
 	const model::World&  m_world;
@@ -111,6 +132,7 @@ struct State
 	PredictedUnits       m_enemySpawnPredictions;
 	Skills               m_learnedSkills;
 	Disposition          m_disposionAround;
+	Projectiles          m_projectileInfos;
 	const MyStrategy*    m_strategy;
 
 	int    m_nextMinionRespawnTick;
@@ -151,6 +173,8 @@ struct State
 		{ 
 			m_storableState.m_previousMove = std::make_unique<model::Move>(m_state.m_move); 
 			std::copy(m_state.m_bonuses.begin(), m_state.m_bonuses.end(), m_storableState.m_bonuses.begin());
+
+			m_storableState.m_projectiles = m_state.m_projectileInfos;
 		}
 	};
 };
@@ -250,7 +274,15 @@ public:
 
 template <> inline double MyStrategy::getMaxDamage<model::Wizard>(const model::Wizard& u) const { return m_state->m_game.getMagicMissileDirectDamage(); };  // TODO - calculate
 
+inline bool operator==(const StorableState::ProjectileInfo& a, const model::Projectile& b)
+{
+	return a.m_id == b.getId();
+}
 
+inline bool operator==(const model::Projectile& a, const StorableState::ProjectileInfo& b)
+{
+	return b.m_id == a.getId();
+}
 
 
 #endif

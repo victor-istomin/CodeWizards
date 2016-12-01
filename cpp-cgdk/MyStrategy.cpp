@@ -1042,6 +1042,7 @@ State::State(const MyStrategy* strategy, const model::Wizard& self, const model:
 	, m_estimatedHP(self.getLife())
 	, m_nextMinionRespawnTick(0)
 	, m_isHastened(false)
+	, m_projectileInfos(oldState.m_projectiles)
 {
 	const auto& wizards = m_world.getWizards();
 	const Point2D selfPoint = self;
@@ -1173,17 +1174,33 @@ void State::updateProjectiles()
 	const auto& projectiles = m_world.getProjectiles();
 	const Point2D selfPoint = m_self;
 
+	m_projectileInfos.erase(std::remove_if(m_projectileInfos.begin(), m_projectileInfos.end(), 
+		[&projectiles](const StorableState::ProjectileInfo& info)
+	{
+		// not exists or gone out of visible range
+		return projectiles.end() == std::find(projectiles.begin(), projectiles.end(), info);
+	}));
+
+	for (const model::Projectile& newProjectile : projectiles)
+	{
+		auto foundIt = std::find(m_projectileInfos.begin(), m_projectileInfos.end(), newProjectile);
+		if (foundIt == m_projectileInfos.end())
+		{
+			m_projectileInfos.emplace_back(newProjectile, m_world.getTickIndex());
+		}
+	}
+
+	// TODO - more accurate flight distance prediction?
+	double flightDistance = m_game.getWizardCastRange();
+
+	// TODO - get obstacles on projectile path :)
+
 	auto itProjectile = std::find_if(std::begin(projectiles), std::end(projectiles), [&selfPoint, this](const model::Projectile& projectile)
 	{
 		Vec2d projectileSpeed = Vec2d(projectile.getSpeedX(), projectile.getSpeedY());
 		LineEquation firingLine = LineEquation::fromDirectionVector(projectile, projectileSpeed);
 
-		if (firingLine.isContains(selfPoint))
-		{
-			return true;   // hit just into center
-		}
-
-		double collitionRadius = m_self.getRadius() + projectile.getRadius();
+		double collisionRadius = m_self.getRadius() + projectile.getRadius();
 
 		// http://stackoverflow.com/questions/1073336/circle-line-segment-collision-detection-algorithm
 		// compute the direction vector D from A to B
@@ -1196,9 +1213,11 @@ void State::updateProjectiles()
 		// Now the fire line equation is x = Dx*t + Ax, y = Dy*t + Ay with 0 <= t <= 1.
 		// where D is destination vector, A is a starting point, C is a circle center
 
-		// compute the value t of the closest point to the circle center (Cx, Cy)
+		// compute the value 't' of the closest point to the circle center (Cx, Cy)
 		Point2D projectilePoint = projectile;
 		double t = D.m_x*(selfPoint.m_x - projectilePoint.m_x) + D.m_y*(selfPoint.m_y - projectilePoint.m_y);
+		if (t < 0)
+			return false;  // DEBUG me: projectile direction is from 'self'
 
 		// This is the projection of C on the line from A to B.
 		// compute the coordinates of the point E on line and closest to C
@@ -1208,10 +1227,11 @@ void State::updateProjectiles()
 		double LEC = E.getDistanceTo(selfPoint);
 
 		// test if the line intersects the circle
-		if (LEC <= collitionRadius)
+		bool willHit = LEC < collisionRadius;
+		if (willHit)
 		{
 			// compute distance from t to circle intersection point
-			double dt = sqrt(collitionRadius*collitionRadius - LEC * LEC);
+			double dt = sqrt(collisionRadius*collisionRadius - LEC * LEC);
 
 			// compute first intersection point
 			Point2D F = Point2D((t - dt)*D.m_x + projectilePoint.m_x, (t - dt)*D.m_y + projectilePoint.m_y);
@@ -1222,7 +1242,7 @@ void State::updateProjectiles()
 			// Gy = (t + dt)*Dy + Ay
 		}
 
-		return LEC <= collitionRadius;
+		return willHit;
 	});
 
 	if (itProjectile != std::end(projectiles))
