@@ -74,22 +74,8 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 
 	const LivingUnit* nearestTarget = getNearestTarget();
 
-	const Point2D enemyBase{ world.getWidth() - 400, 400 };
-	bool isBetweenSpawnAndCorner = false;
-	for (const PredictedUnit& spawn : m_state->m_enemySpawnPredictions)
-		isBetweenSpawnAndCorner = isBetweenSpawnAndCorner || enemyBase.getDistanceTo(self) < enemyBase.getDistanceTo(spawn)*1.2/*hack*/;
-
-	double spawnRadius = m_state->m_enemySpawnPredictions.empty() ? 1 : m_state->m_enemySpawnPredictions.front().getRadius();
-	int spawnTraversalTicks = (isBetweenSpawnAndCorner ? spawnRadius * 2 : spawnRadius) / m_state->m_game.getWizardStrafeSpeed();
-	int noSpawnSafeTicks = m_state->m_nextMinionRespawnTick - m_state->m_world.getTickIndex() - spawnTraversalTicks;
-
-	auto emptyPredictions = std::vector<PredictedUnit>();
-	auto dangerousEnemies = filterPointers<const model::Unit*>(
-		[&self, this](const model::Unit& u) {return isEnemy(u) && self.getDistanceTo(u) < getSafeDistance(u); },
-		world.getBuildings(), world.getWizards(), world.getMinions(),
-		(noSpawnSafeTicks > 0 ? emptyPredictions : m_state->m_enemySpawnPredictions));
-
-	double totalEnemiesDamage = std::accumulate(dangerousEnemies.begin(), dangerousEnemies.end(), 0.0,
+	auto dangerousEnemies = getDangerousEnemies();
+	double totalEnemiesDamage = std::accumulate(dangerousEnemies.begin(), dangerousEnemies.end(), 0.0, 
 		[this](double sum, const model::Unit* enemy) {return sum + getMaxDamage(enemy); });
 
 	bool isNearOrk = dangerousEnemies.end() != std::find_if(dangerousEnemies.begin(), dangerousEnemies.end(),
@@ -101,9 +87,10 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 		m_state->m_isLowHP = true;  // this also activates "don't retreat too far" feature
 	}
 
-	double relativeEnemiesAmount = m_state->m_disposionAround.movableEnemyHP / m_state->m_disposionAround.movebleTeammatesHP;
-	const double rushHpThreshold = m_state->m_disposionAround.teammateMinions != 0 ? 3.0 : 2.0;
-	bool isEnemyRushing = relativeEnemiesAmount >= 2.0 && m_state->m_disposionAround.enemyWizards != 0;  // TODO - take teammate towers into account?
+	const State::Disposition& around = m_state->m_disposionAround;
+	double relativeEnemiesAmount = around.movableEnemyHP / around.movebleTeammatesHP;
+	const double rushHpThreshold = around.teammateMinions != 0 ? 3.0 : 2.0;
+	bool isEnemyRushing = relativeEnemiesAmount >= 2.0 && around.enemyWizards != 0;  // TODO - take teammate towers into account?
 
 	// Если осталось мало жизненной энергии, отступаем к предыдущей ключевой точке на линии.
 	bool isRetreating = isTooCloseToEnemy || m_state->m_isLowHP || isEnemyRushing;
@@ -143,7 +130,8 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 		double distance = self.getDistanceTo(*nearestTarget);
 
 		// ... и он в пределах досягаемости наших заклинаний, ...
-		if (distance <= self.getCastRange()) 
+		const double shootingDistance = self.getCastRange();
+		if (distance <= shootingDistance) 
 		{
 			double angle = self.getAngleTo(*nearestTarget);
 
@@ -158,7 +146,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 				if (std::abs(enenyAngle) > game.getStaffSector())
 				{
 					double ticksToTurn = 1 + (std::abs(enenyAngle) - game.getStaffSector()) / game.getWizardMaxTurnAngle();
-					double desiredDistance = self.getCastRange() - ticksToTurn * game.getWizardStrafeSpeed();
+					double desiredDistance = shootingDistance - ticksToTurn * game.getWizardStrafeSpeed();
 
 					if (self.getDistanceTo(*nearestTarget) > desiredDistance)
 					{
@@ -168,14 +156,91 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 			}
 
 			// Если цель перед нами, ...
-			if (m_state->isReadyForAction(ACTION_FROST_BOLT))
+
+			// TODO - more accurate mana regeneration
+			const double damageMm      = m_state->m_game.getMagicMissileDirectDamage();
+			const double damageFB      = m_state->m_game.getFrostBoltDirectDamage();
+			const double shootingAngle = game.getStaffSector() / 2.0;
+
+			double frostCooldownMana = m_state->m_game.getFrostBoltCooldownTicks() * m_state->m_game.getWizardBaseManaRegeneration()
+			                         - m_state->m_game.getMagicMissileManacost(); // usually, we're firing MM while FB cools down
+
+			bool isLastFrostBolt = ((m_state->m_self.getMana() + frostCooldownMana) / m_state->m_game.getFrostBoltManacost()) < 2.0;
+
+			auto targetMinion = getMinion(nearestTarget);
+			auto targetWizard = getWizard(nearestTarget);
+			bool canTakedownWithFBMM = nearestTarget->getLife() > damageMm && nearestTarget->getLife() < (damageFB + damageMm);
+
+			bool shouldShootLastFB = isLastFrostBolt &&
+				(isRetreating
+					|| (targetMinion != nullptr && targetMinion->getType() == model::MINION_FETISH_BLOWDART && canTakedownWithFBMM)
+					|| (targetWizard != nullptr && canTakedownWithFBMM)
+					/*TODO: || isKamikazeMode - shoot before die*/);
+
+			if (m_state->isReadyForAction(ACTION_FROST_BOLT) && shouldShootLastFB)
 			{
-				if (abs(angle) < game.getStaffSector() / 2.0)
+				std::vector<const model::LivingUnit*> candidates;
+				candidates.reserve(16);
+
+				std::copy_if(dangerousEnemies.begin(), dangerousEnemies.end(), std::back_inserter(candidates), 
+					[this, shootingDistance, shootingAngle](const LivingUnit* unit)
+				{
+					return m_state->m_self.getDistanceTo(*unit) <= shootingDistance
+						&& std::abs(m_state->m_self.getAngleTo(*unit)) < shootingAngle;
+				});
+
+				std::sort(candidates.begin(), candidates.end(), [](const auto* left, const auto& right) {return left->getLife() < right->getLife(); });
+
+				// reverse iteration, because rightmost candidate has more health
+
+				auto canKillWizardIt = std::find_if(candidates.rbegin(), candidates.rend(),
+					[this, damageFB](const model::LivingUnit* u) {return getWizard(u) && u->getLife() < damageFB; });
+
+				auto canAlmostKillWizardIt = std::find_if(candidates.rbegin(), candidates.rend(),
+					[this, damageFB, damageMm](const model::LivingUnit* u) {return getWizard(u) && u->getLife() < (damageFB + damageMm); });
+
+				auto hasBonusIt = std::find_if(candidates.rbegin(), candidates.rend(),
+					[this, damageFB, damageMm](const model::LivingUnit* u) 
+				{
+					auto wizard = getWizard(u); 
+					return wizard &&
+						(hasStatus(wizard, model::STATUS_EMPOWERED) || hasStatus(wizard, model::STATUS_HASTENED) || hasStatus(wizard, model::STATUS_SHIELDED));
+				});
+
+				auto canKillAnyIt = std::find_if(candidates.rbegin(), candidates.rend(), 
+					[this, damageFB](const model::LivingUnit* u) { return u->getLife() < damageFB; });
+
+				auto canFreezeWizardIt = std::find_if(candidates.rbegin(), candidates.rend(), 
+					[this](const model::LivingUnit* u) { return getWizard(u) != nullptr; });
+
+				if (canKillWizardIt != candidates.rend())
+					nearestTarget = *canKillWizardIt;
+				else if (canAlmostKillWizardIt != candidates.rend())
+					nearestTarget = *canAlmostKillWizardIt;
+				else if (hasBonusIt != candidates.rend())
+					nearestTarget = *hasBonusIt;
+				else if (canKillAnyIt != candidates.rend())
+					nearestTarget = *canKillAnyIt;
+				else if (canFreezeWizardIt != candidates.rend())
+					nearestTarget = *canFreezeWizardIt;  // freeze most healthy enemy wizard when retreating (less healthy may be shoot soon)
+				else if (!candidates.empty())
+					nearestTarget = candidates.front();  // with minimal health
+
+				angle = m_state->m_self.getAngleTo(*nearestTarget);
+				distance = m_state->m_self.getDistanceTo(*nearestTarget);
+
+				move.setAction(ActionType::ACTION_FROST_BOLT);
+				move.setCastAngle(angle);
+				move.setMinCastDistance(distance - nearestTarget->getRadius() + game.getFrostBoltRadius());
+			}
+			else if (m_state->isReadyForAction(ACTION_FROST_BOLT) && !isLastFrostBolt)
+			{
+				if (abs(angle) < shootingAngle)
 				{
 					// ... то атакуем.
 					move.setAction(ActionType::ACTION_FROST_BOLT);
 					move.setCastAngle(angle);
-					move.setMinCastDistance(distance - nearestTarget->getRadius() + game.getMagicMissileRadius());
+					move.setMinCastDistance(distance - nearestTarget->getRadius() + game.getFrostBoltRadius());
 				}
 			}
 			else if (m_state->isReadyForAction(ActionType::ACTION_MAGIC_MISSILE))
@@ -236,6 +301,26 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 			move.setTurn(angle);
 		}
 	}
+}
+
+std::vector<const model::LivingUnit*> MyStrategy::getDangerousEnemies() const
+{
+	const Point2D enemyBase{ m_state->m_world.getWidth() - 400, 400 };
+	bool isBetweenSpawnAndCorner = false;
+	for (const PredictedUnit& spawn : m_state->m_enemySpawnPredictions)
+		isBetweenSpawnAndCorner = isBetweenSpawnAndCorner || enemyBase.getDistanceTo(m_state->m_self) < enemyBase.getDistanceTo(spawn)*1.2/*hack*/;
+
+	double spawnRadius = m_state->m_enemySpawnPredictions.empty() ? 1 : m_state->m_enemySpawnPredictions.front().getRadius();
+	int spawnTraversalTicks = static_cast<int>((isBetweenSpawnAndCorner ? spawnRadius * 2 : spawnRadius) / m_state->m_game.getWizardStrafeSpeed());
+	int noSpawnSafeTicks = m_state->m_nextMinionRespawnTick - m_state->m_world.getTickIndex() - spawnTraversalTicks;
+
+	auto emptyPredictions = std::vector<PredictedUnit>();
+	auto dangerousEnemies = filterPointers<const model::LivingUnit*>(
+		[this](const model::Unit& u) {return isEnemy(u) && m_state->m_self.getDistanceTo(u) < getSafeDistance(u); },
+		m_state->m_world.getBuildings(), m_state->m_world.getWizards(), m_state->m_world.getMinions(),
+		(noSpawnSafeTicks > 0 ? emptyPredictions : m_state->m_enemySpawnPredictions));
+
+	return std::move(dangerousEnemies);
 }
 
 bool MyStrategy::isUnitSeeing(const model::Unit* unit, const Point2D& point)
@@ -499,10 +584,28 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 	const BonusSpawn* nearest = nullptr;
 	double minPathDistance = std::numeric_limits<double>::infinity();
 
+	auto enemiesAround = getDangerousEnemies();
+
 	for (BonusSpawn& spawn : m_state->m_bonuses)
 	{
+		if (spawn.m_point.getDistanceTo(self) > MAX_TRAVEL_DISTANCE)
+			continue;  // path can't be shorter than straight line
+
 		const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
 		spawn.m_smoothPathCache = getSmoothPathTo(spawn.m_point, map, spawn.m_tilesPathCache);
+		const Point2D nextStepPoint = spawn.m_smoothPathCache.empty() ? spawn.m_point : spawn.m_smoothPathCache.front();
+
+		auto isEnemyInBetweenPredicate = [&self, &nextStepPoint](const model::LivingUnit* enemy)
+		{
+			static const double THRESHOLD = PI / 3.0;
+			return std::abs(self.getAngleTo(*enemy) - self.getAngleTo(nextStepPoint.m_x, nextStepPoint.m_y)) < THRESHOLD;
+		};
+
+		double betweenEnemiesHp = std::accumulate(enemiesAround.begin(), enemiesAround.end(), 0.0,
+			[&isEnemyInBetweenPredicate](double summ, const model::LivingUnit* enemy) { return summ + (isEnemyInBetweenPredicate(enemy) ? enemy->getLife() : 0.0); });
+
+		if (self.getLife() < betweenEnemiesHp)
+			continue;  // "do it or die" is not too reasonable
 
 		double currentDistance = getPathLength(spawn.m_smoothPathCache) + spawn.m_dangerHandicap;
 
@@ -660,7 +763,7 @@ void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage
 			return;  // don't retreat too far, except getting a bonus
 	}
 
-	if (!m_state->m_isHastened && m_state->isReadyForAction(ACTION_HASTE))
+	if (!m_state->m_isHastened && m_state->isReadyForAction(ACTION_HASTE) && m_state->m_self.getLife() != m_state->m_self.getMaxLife())
 	{
 		move.setAction(ACTION_HASTE);
 		move.setStatusTargetId(m_state->m_self.getId());
@@ -744,7 +847,7 @@ double MyStrategy::getSafeDistance(const model::Unit& enemy) const
 
 	// TODO - carefully test condition when enemy-attack-range < distance < exp-getting-radius
 	if (getWizard(&enemy))
-		safeDistance = getWizard(&enemy)->getCastRange() + selfRadius + 2 * m_state->m_game.getWizardForwardSpeed();
+		safeDistance = getWizard(&enemy)->getCastRange() + selfRadius + m_state->m_game.getMagicMissileRadius() + 2 * m_state->m_game.getWizardForwardSpeed();
 
 	const model::Minion* minion = getMinion(&enemy);
 	if (minion)
@@ -901,9 +1004,15 @@ void MyStrategy::learnSkill(model::Move& move)
 {
 	const int level  = m_state->m_self.getLevel();
 	const int skillsTotal = std::extent<decltype(SKILLS_TO_LEARN)>::value;
-	
+
 	int nextSkill = level - 1;
-	if (nextSkill >= 0 && nextSkill < skillsTotal)
+	if (nextSkill > 0 && int(m_state->m_self.getSkills().size()) < nextSkill)
+	{
+		// for case when got 2 levelups at onCe
+		int previousSkill = std::max(0, nextSkill - 1);
+		move.setSkillToLearn(SKILLS_TO_LEARN[previousSkill]);
+	}
+	else if (nextSkill >= 0 && nextSkill < skillsTotal)
 	{
 		move.setSkillToLearn(SKILLS_TO_LEARN[nextSkill]);
 	}
@@ -1011,7 +1120,7 @@ void State::updateDispositionAround()
 		if (unit.getFaction() == m_self.getFaction())
 		{
 			// teammates has penalty if they are closer to base than me
-			bool isAtFrontOfMe = std::abs(m_self.getAngleTo(unit) <= PI / 2);
+			bool isAtFrontOfMe = std::abs(m_self.getAngleTo(unit)) <= (PI / 2);
 
 			const double BACK_TEAMMATE_PENALTY = 3;
 
@@ -1037,7 +1146,7 @@ void State::updateDispositionAround()
 		else if (minion != nullptr)
 			(isTeammate ? m_disposionAround.teammateMinions : m_disposionAround.enemyMinions) += 1;
 		else if (builing != nullptr)
-			(isTeammate ? m_disposionAround.teammateBuildings : m_disposionAround.teammateBuildings) += 1;
+			(isTeammate ? m_disposionAround.teammateBuildings : m_disposionAround.enemyBuildings) += 1;
 
 		if (wizard != nullptr || minion != nullptr)
 			(isTeammate ? m_disposionAround.movebleTeammatesHP : m_disposionAround.movableEnemyHP) += unit.getLife();
@@ -1152,6 +1261,16 @@ void State::updateBonuses()
 				&& wizard->getId() != m_self.getId() 
 				&& spawn.m_point.getDistanceTo(*wizard) < NEAR_DISTANCE;
 		});
+
+// maybe, bad idea
+// 		spawn.m_wizardsHp = BonusSpawn::WizardsHealth();
+// 		for (const model::Wizard& wizard : m_world.getWizards())
+// 		{
+// 			if (wizard.getFaction() == m_self.getFaction())
+// 				spawn.m_wizardsHp.teammates += wizard.getLife();
+// 			else 
+// 				spawn.m_wizardsHp.enemies += wizard.getLife();
+// 		}
 
 		spawn.m_smoothPathCache.clear();
 		spawn.m_tilesPathCache.clear();

@@ -31,6 +31,14 @@ struct BonusSpawn
 		NO_BONUS,
 	};
 
+	struct WizardsHealth
+	{
+		double enemies;
+		double teammates;
+
+		WizardsHealth() : enemies(0), teammates(0) {}
+	};
+
 	Point2D    m_point;
 	BonusState m_state;          // true if someone has collected bonus
 	int        m_lastCheckTick;
@@ -39,6 +47,7 @@ struct BonusSpawn
 
 	Map::PointPath m_smoothPathCache;
 	Map::TilesPath m_tilesPathCache;
+// 	WizardsHealth  m_wizardsHp;   // maybe, bad idea
 
 	static const size_t  COUNT = 2;
 	static const Point2D RESPAWN_POINTS[];
@@ -214,6 +223,7 @@ private:
 	bool isEnemy(const model::Unit& u) const  { return u.getFaction() != model::FACTION_NEUTRAL && u.getFaction() != m_state->m_self.getFaction(); }
 
 	Vec2d getAlternateMoveVector(const Vec2d& suggestion);
+	std::vector<const model::LivingUnit*> getDangerousEnemies() const;
 
 	void learnSkill(model::Move& move);
 
@@ -230,6 +240,12 @@ public:
 	static auto getPredicted(const model::Unit* unit) { return dynamic_cast<const PredictedUnit*>(unit); }
 
 	static bool isUnitSeeing(const model::Unit* unit, const Point2D& point);
+
+	static bool hasStatus(const model::Wizard* unit, model::StatusType status)
+	{ 
+		const auto& ss = unit->getStatuses(); 
+		return ss.end() != std::find_if(ss.begin(), ss.end(), [status](const auto& active) { return active.getType() == status; });
+	}
 };
 
 template <> inline double MyStrategy::getMaxDamage<model::Wizard>(const model::Wizard& u) const { return m_state->m_game.getMagicMissileDirectDamage(); };  // TODO - calculate
