@@ -60,18 +60,25 @@ struct BonusSpawn
 };
 
 typedef std::array<BonusSpawn, BonusSpawn::COUNT> BonusSpawns;
+typedef std::vector<long long>                    Ids;
 
 struct StorableState
 {
 	struct ProjectileInfo
 	{
-		long long m_id;
-		int       m_detectionTick;
-		Point2D   m_detectionPoint;
-		Vec2d     m_speed;
+		long long      m_id;
+		long long      m_ownerUnitId;
+		model::Faction m_faction;
+		int            m_detectionTick;
+		Point2D        m_detectionPoint;
+		double         m_radius;
+		Vec2d          m_speed;
+		Ids            m_possibleTargets;
 
-		ProjectileInfo(const model::Projectile& p, int tick) 
-			: m_id(p.getId()), m_detectionTick(tick), m_detectionPoint(p), m_speed(p.getSpeedX(), p.getSpeedY()) 
+		ProjectileInfo(const model::Projectile& p, int tick)
+			: m_id(p.getId()), m_ownerUnitId(p.getOwnerUnitId()), m_faction(p.getFaction())
+			, m_detectionTick(tick), m_detectionPoint(p), m_radius(p.getRadius()), m_speed(p.getSpeedX(), p.getSpeedY()) 
+			, m_possibleTargets()
 		{}
 
 		friend bool operator==(const ProjectileInfo& a, const model::Projectile& b);
@@ -260,7 +267,8 @@ public:
 
 	static auto getWizard(const model::Unit* unit)    { return dynamic_cast<const model::Wizard*>(unit); }
 	static auto getMinion(const model::Unit* unit)    { return dynamic_cast<const model::Minion*>(unit); }
-	static auto getBuilding(const model::Unit* unit)  { return dynamic_cast<const model::Building*>(unit); }
+	static auto getBuilding(const model::Unit* unit) { return dynamic_cast<const model::Building*>(unit); }
+	static auto getTree(const model::Unit* unit)     { return dynamic_cast<const model::Tree*>(unit); }
 	static auto getPredicted(const model::Unit* unit) { return dynamic_cast<const PredictedUnit*>(unit); }
 
 	static bool isUnitSeeing(const model::Unit* unit, const Point2D& point);

@@ -3,6 +3,7 @@
 
 #include "MyStrategy.h"
 #include "model/LivingUnit.h"
+#include "model/Wizard.h"
 #include "DebugVisualizer.h"
 #include "PathFinder.h"
 #include "MapsManager.h"
@@ -1174,82 +1175,122 @@ void State::updateProjectiles()
 	const auto& projectiles = m_world.getProjectiles();
 	const Point2D selfPoint = m_self;
 
-	m_projectileInfos.erase(std::remove_if(m_projectileInfos.begin(), m_projectileInfos.end(), 
-		[&projectiles](const StorableState::ProjectileInfo& info)
+	auto disappearedIt = std::remove_if(m_projectileInfos.begin(), m_projectileInfos.end(), [&projectiles](const StorableState::ProjectileInfo& info)
 	{
 		// not exists or gone out of visible range
 		return projectiles.end() == std::find(projectiles.begin(), projectiles.end(), info);
-	}));
+	});
+
+	if (disappearedIt != m_projectileInfos.end())
+		m_projectileInfos.erase(disappearedIt, m_projectileInfos.end());
 
 	for (const model::Projectile& newProjectile : projectiles)
 	{
 		auto foundIt = std::find(m_projectileInfos.begin(), m_projectileInfos.end(), newProjectile);
 		if (foundIt == m_projectileInfos.end())
-		{
 			m_projectileInfos.emplace_back(newProjectile, m_world.getTickIndex());
-		}
 	}
 
-	// TODO - more accurate flight distance prediction?
-	double flightDistance = m_game.getWizardCastRange();
+	const std::vector<const model::LivingUnit*> livingUnits = filterPointers<const model::LivingUnit*>([](const model::LivingUnit&) {return true; }, 
+		m_world.getWizards(), m_world.getMinions(), m_world.getBuildings(), m_world.getTrees());
 
-	// TODO - get obstacles on projectile path :)
+	std::vector<const model::LivingUnit*> unitsMightHit;
+	unitsMightHit.reserve(16);
 
-	auto itProjectile = std::find_if(std::begin(projectiles), std::end(projectiles), [&selfPoint, this](const model::Projectile& projectile)
+	for (StorableState::ProjectileInfo& projectileInfo : m_projectileInfos)
 	{
-		Vec2d projectileSpeed = Vec2d(projectile.getSpeedX(), projectile.getSpeedY());
-		LineEquation firingLine = LineEquation::fromDirectionVector(projectile, projectileSpeed);
+		Vec2d direction = projectileInfo.m_speed; 
+		direction.normalize();
 
-		double collisionRadius = m_self.getRadius() + projectile.getRadius();
+		// TODO: optimize this:
+		const model::Projectile& projectile = *std::find_if(m_world.getProjectiles().begin(), m_world.getProjectiles().end(), [&projectileInfo](const auto& p) {return p.getId() == projectileInfo.m_id; });
 
-		// http://stackoverflow.com/questions/1073336/circle-line-segment-collision-detection-algorithm
-		// compute the direction vector D from A to B
-		Vec2d D = projectileSpeed;
-		D.normalize();
+		// TODO - more accurate flight distance prediction?
+		// e.g. we could track max projectile distance for each unit
+		double  flightDistance = m_game.getWizardCastRange();
+		Point2D flightFinish   = projectileInfo.m_detectionPoint + (direction * flightDistance).toPoint<Point2D>();
 
-		// TODO - it looks like this code doesn't care on projectile flying direction and distance
-		// however, this may be somehow used to prevent staying on firing line like: me -> teammate's back -> enemy
-
-		// Now the fire line equation is x = Dx*t + Ax, y = Dy*t + Ay with 0 <= t <= 1.
-		// where D is destination vector, A is a starting point, C is a circle center
-
-		// compute the value 't' of the closest point to the circle center (Cx, Cy)
-		Point2D projectilePoint = projectile;
-		double t = D.m_x*(selfPoint.m_x - projectilePoint.m_x) + D.m_y*(selfPoint.m_y - projectilePoint.m_y);
-		if (t < 0)
-			return false;  // DEBUG me: projectile direction is from 'self'
-
-		// This is the projection of C on the line from A to B.
-		// compute the coordinates of the point E on line and closest to C
-		Point2D E = Point2D(t*D.m_x + projectilePoint.m_x, t*D.m_y + projectilePoint.m_y);
-
-		// compute the euclidean distance from E to C
-		double LEC = E.getDistanceTo(selfPoint);
-
-		// test if the line intersects the circle
-		bool willHit = LEC < collisionRadius;
-		if (willHit)
+		auto mightHit = [&projectile, flightFinish, this](const model::LivingUnit* unit)
 		{
-			// compute distance from t to circle intersection point
-			double dt = sqrt(collisionRadius*collisionRadius - LEC * LEC);
+			return Map::isSectionIntersects(projectile, flightFinish, *unit, unit->getRadius() + projectile.getRadius())
+				&& (MyStrategy::getTree(unit) != nullptr || unit->getFaction() != projectile.getFaction());
+		};
 
-			// compute first intersection point
-			Point2D F = Point2D((t - dt)*D.m_x + projectilePoint.m_x, (t - dt)*D.m_y + projectilePoint.m_y);
-			double test = F.getDistanceTo(selfPoint);
+		unitsMightHit.clear();
+		std::copy_if(livingUnits.begin(), livingUnits.end(), std::back_inserter(unitsMightHit), mightHit);
+		std::sort(unitsMightHit.begin(), unitsMightHit.end(), [&projectile](const auto* a, const auto* b) { return projectile.getDistanceTo(*a) < projectile.getDistanceTo(*b); });
 
-			// compute second intersection point
-			// Gx = (t + dt)*Dx + Ax
-			// Gy = (t + dt)*Dy + Ay
+		auto treeIt = std::find_if(unitsMightHit.begin(), unitsMightHit.end(), [](const auto* unit) { return MyStrategy::getTree(unit) != nullptr; });
+		auto cantHitIt = treeIt == unitsMightHit.end() ? unitsMightHit.end() : (treeIt + 1);
+		if (cantHitIt != unitsMightHit.end())
+		{
+			// projectile can't flight through tree
+			unitsMightHit.erase(cantHitIt, unitsMightHit.end());
 		}
 
-		return willHit;
-	});
-
-	if (itProjectile != std::end(projectiles))
-	{
-		// fire in the hall!
-		m_isUnderMissile = true;
+		projectileInfo.m_possibleTargets.clear();
+		projectileInfo.m_possibleTargets.reserve(16);
+		for (const auto* unit : unitsMightHit)
+			projectileInfo.m_possibleTargets.push_back(unit->getId());
 	}
+
+// 	// TODO - get obstacles on projectile path :)
+// 
+// 	auto itProjectile = std::find_if(std::begin(projectiles), std::end(projectiles), [&selfPoint, this](const model::Projectile& projectile)
+// 	{
+// 		Vec2d projectileSpeed = Vec2d(projectile.getSpeedX(), projectile.getSpeedY());
+// 		LineEquation firingLine = LineEquation::fromDirectionVector(projectile, projectileSpeed);
+// 
+// 		double collisionRadius = m_self.getRadius() + projectile.getRadius();
+// 
+// 		// http://stackoverflow.com/questions/1073336/circle-line-segment-collision-detection-algorithm
+// 		// compute the direction vector D from A to B
+// 		Vec2d D = projectileSpeed;
+// 		D.normalize();
+// 
+// 		// TODO - it looks like this code doesn't care on projectile flying direction and distance
+// 		// however, this may be somehow used to prevent staying on firing line like: me -> teammate's back -> enemy
+// 
+// 		// Now the fire line equation is x = Dx*t + Ax, y = Dy*t + Ay with 0 <= t <= 1.
+// 		// where D is destination vector, A is a starting point, C is a circle center
+// 
+// 		// compute the value 't' of the closest point to the circle center (Cx, Cy)
+// 		Point2D projectilePoint = projectile;
+// 		double t = D.m_x*(selfPoint.m_x - projectilePoint.m_x) + D.m_y*(selfPoint.m_y - projectilePoint.m_y);
+// 		if (t < 0)
+// 			return false;  // DEBUG me: projectile direction is from 'self'
+// 
+// 		// This is the projection of C on the line from A to B.
+// 		// compute the coordinates of the point E on line and closest to C
+// 		Point2D E = Point2D(t*D.m_x + projectilePoint.m_x, t*D.m_y + projectilePoint.m_y);
+// 
+// 		// compute the euclidean distance from E to C
+// 		double LEC = E.getDistanceTo(selfPoint);
+// 
+// 		// test if the line intersects the circle
+// 		bool willHit = LEC < collisionRadius;
+// 		if (willHit)
+// 		{
+// 			// compute distance from t to circle intersection point
+// 			double dt = sqrt(collisionRadius*collisionRadius - LEC * LEC);
+// 
+// 			// compute first intersection point
+// 			Point2D F = Point2D((t - dt)*D.m_x + projectilePoint.m_x, (t - dt)*D.m_y + projectilePoint.m_y);
+// 			double test = F.getDistanceTo(selfPoint);
+// 
+// 			// compute second intersection point
+// 			// Gx = (t + dt)*Dx + Ax
+// 			// Gy = (t + dt)*Dy + Ay
+// 		}
+// 
+// 		return willHit;
+// 	});
+// 
+// 	if (itProjectile != std::end(projectiles))
+// 	{
+// 		// fire in the hall!
+// 		m_isUnderMissile = true;
+// 	}
 }
 
 //////////////////////////////////////////////////////////////////////////
