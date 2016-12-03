@@ -267,6 +267,33 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 				retreatTo(m_reasonableBonus->m_point, move, debugMessage);
 			}
 
+			if (m_state->m_isUnderMissile)
+			{
+				const auto& projectiles = m_state->m_world.getProjectiles();
+				auto mostDangerous = projectiles.end();
+				for (const StorableState::ProjectileInfo& projectileInfo : m_state->m_projectileInfos)
+				{
+					const auto& possibleTargets = projectileInfo.m_possibleTargets;
+					if (possibleTargets.end() == std::find(possibleTargets.begin(), possibleTargets.end(), m_state->m_self.getId()))
+						continue;
+
+					auto projectileIt = std::find_if(projectiles.begin(), projectiles.end(), [&projectileInfo](const auto& p) {return p.getId() == projectileInfo.m_id; });
+					assert(projectileIt != projectiles.end() && "should disappear from projectiles info");
+					if (projectileIt == projectiles.end())
+						continue;
+
+					if (mostDangerous == projectiles.end() || mostDangerous->getRadius() < projectileIt->getRadius())
+						mostDangerous = projectileIt;  // dart is the littlest, fireball is the biggest
+				}
+
+				if (mostDangerous != projectiles.end())
+				{
+					//Vec2d evasion = { -10, -10 };
+					move.setSpeed(-10);
+					move.setStrafeSpeed(-10);
+				}
+			}
+
 			return;
 		}
 	}
@@ -1187,7 +1214,7 @@ void State::updateProjectiles()
 	for (const model::Projectile& newProjectile : projectiles)
 	{
 		auto foundIt = std::find(m_projectileInfos.begin(), m_projectileInfos.end(), newProjectile);
-		if (foundIt == m_projectileInfos.end())
+		if (foundIt == m_projectileInfos.end() && newProjectile.getType() != model::PROJECTILE_DART)
 			m_projectileInfos.emplace_back(newProjectile, m_world.getTickIndex());
 	}
 
@@ -1231,7 +1258,11 @@ void State::updateProjectiles()
 		projectileInfo.m_possibleTargets.clear();
 		projectileInfo.m_possibleTargets.reserve(16);
 		for (const auto* unit : unitsMightHit)
+		{
 			projectileInfo.m_possibleTargets.push_back(unit->getId());
+			if (unit->getId() == m_self.getId())
+				m_isUnderMissile = true;
+		}
 	}
 
 // 	// TODO - get obstacles on projectile path :)
