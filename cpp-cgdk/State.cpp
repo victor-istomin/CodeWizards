@@ -17,9 +17,11 @@ State::State(const MyStrategy* strategy, const model::Wizard& self, const model:
 	, m_isHastened(false)
 	, m_projectileInfos(oldState.m_projectiles)
 	, m_dangerousProjectiles()
+	, m_dangerousEnemies()
 {
-	auto allUnits = filterPointers<const model::Unit*>([](...) {return true; }
-	, m_world.getWizards(), m_world.getMinions(), m_world.getBuildings(), m_world.getBonuses(), m_world.getProjectiles(), m_world.getTrees());
+	auto allUnits = filterPointers<const model::Unit*>([](...) {return true; }, 
+		m_world.getWizards(), m_world.getMinions(), m_world.getBuildings(), m_world.getBonuses(), m_world.getProjectiles(), m_world.getTrees());
+
 	for (const auto* unit : allUnits)
 	{
 		auto& sameType = m_units[std::type_index(typeid(*unit))];
@@ -42,17 +44,6 @@ State::State(const MyStrategy* strategy, const model::Wizard& self, const model:
 	m_isLowHP = m_estimatedHP < (self.getMaxLife() * State::LOW_HP_FACTOR);
 }
 
-//////////////////////////////////////////////////////////////////////////
-//
-// Method:
-//
-// Desc:
-//
-// Params:
-//
-// Return:
-//
-///////////////////////////////////////////////////////////////////////////
 void State::updateSkillsAndActions()
 {
 	int learnedCount = std::min<int>(m_self.getLevel(), std::extent<decltype(MyStrategy::SKILLS_TO_LEARN)>::value);
@@ -140,17 +131,6 @@ void State::updateDispositionAround()
 	std::for_each(m_world.getMinions().begin(), m_world.getMinions().end(), applyDisposition);
 }
 
-//////////////////////////////////////////////////////////////////////////
-//
-// Method:
-//
-// Desc:
-//
-// Params:
-//
-// Return:
-//
-///////////////////////////////////////////////////////////////////////////
 void State::updateProjectiles()
 {
 	const auto& projectiles = m_world.getProjectiles();
@@ -284,17 +264,6 @@ void State::updateProjectiles()
 	// 	}
 }
 
-//////////////////////////////////////////////////////////////////////////
-//
-// Method:
-//
-// Desc:
-//
-// Params:
-//
-// Return:
-//
-///////////////////////////////////////////////////////////////////////////
 void State::updateBonuses()
 {
 	auto teammates = filterPointers<const model::Unit*>([this](const model::Unit& u) {return u.getFaction() == m_self.getFaction(); },
@@ -389,4 +358,22 @@ void State::updatePredictions()
 	// 	m_predictions.emplace_back(PredictedUnit(teamCorner + Point2D(minionSpawnDxDy + halfTileDxDy, -halfTileDxDy), minionSpawnRadius, selfFaction, m_nextMinionRespawnTick, predictedDamage, safeDistance));
 	// 	m_predictions.emplace_back(PredictedUnit(teamCorner + Point2D(halfTileDxDy, -minionSpawnDxDy - halfTileDxDy), minionSpawnRadius, selfFaction, m_nextMinionRespawnTick, predictedDamage, safeDistance));
 	// 	m_predictions.emplace_back(PredictedUnit(teamCorner + Point2D(minionSpawnDxDy / diagonal + halfTileDxDy, -minionSpawnDxDy / diagonal - halfTileDxDy), minionSpawnRadius, selfFaction, m_nextMinionRespawnTick, predictedDamage, safeDistance));
+}
+
+void State::updateDangerousEnemies()
+{
+	const Point2D enemyBase{ m_world.getWidth() - 400, 400 };
+	bool isBetweenSpawnAndCorner = false;
+	for (const PredictedUnit& spawn : m_enemySpawnPredictions)
+		isBetweenSpawnAndCorner = isBetweenSpawnAndCorner || enemyBase.getDistanceTo(m_self) < enemyBase.getDistanceTo(spawn)*1.2/*hack*/;
+
+	double spawnRadius = m_enemySpawnPredictions.empty() ? 1 : m_enemySpawnPredictions.front().getRadius();
+	int spawnTraversalTicks = static_cast<int>((isBetweenSpawnAndCorner ? spawnRadius * 2 : spawnRadius) / m_game.getWizardStrafeSpeed());
+	int noSpawnSafeTicks = m_nextMinionRespawnTick - m_world.getTickIndex() - spawnTraversalTicks;
+
+	auto emptyPredictions = std::vector<PredictedUnit>();
+	m_dangerousEnemies = filterPointers<const model::LivingUnit*>(
+		[this](const model::Unit& u) {return MyStrategy::isEnemy(u, m_self) && m_self.getDistanceTo(u) < m_strategy->getSafeDistance(u); },
+		m_world.getBuildings(), m_world.getWizards(), m_world.getMinions(),
+		(noSpawnSafeTicks > 0 ? emptyPredictions : m_enemySpawnPredictions));
 }

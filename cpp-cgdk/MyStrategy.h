@@ -95,10 +95,7 @@ private:
 	template <typename UnitType> double getMaxDamage(const UnitType& u) const      { return u.getDamage(); }
 	// also, there is a specialization out of class scope
 
-	bool isEnemy(const model::Unit& u) const  { return u.getFaction() != model::FACTION_NEUTRAL && u.getFaction() != m_state->m_self.getFaction(); }
-
 	Vec2d getAlternateMoveVector(const Vec2d& suggestion);
-	std::vector<const model::LivingUnit*> getDangerousEnemies() const;
 
 	void learnSkill(model::Move& move);
 
@@ -110,6 +107,8 @@ public:
 
     void move(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move) override;
 
+	bool considerAttack(model::Move &move, bool isRetreating, DebugMessage& debugMessage);
+
 	double getSafeDistance(const model::Unit& enemy) const;
 
 	static auto getWizard(const model::Unit* unit)    { return dynamic_cast<const model::Wizard*>(unit); }
@@ -119,6 +118,7 @@ public:
 	static auto getPredicted(const model::Unit* unit) { return dynamic_cast<const PredictedUnit*>(unit); }
 
 	static bool isUnitSeeing(const model::Unit* unit, const Point2D& point);
+	static bool isEnemy(const model::Unit& u, const model::Wizard& self) { return u.getFaction() != model::FACTION_NEUTRAL && u.getFaction() != self.getFaction(); }
 
 	static bool hasStatus(const model::Wizard* unit, model::StatusType status)
 	{ 

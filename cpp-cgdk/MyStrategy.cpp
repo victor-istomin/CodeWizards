@@ -72,9 +72,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 		debugMessage.visualizeBonuses(m_state->m_bonuses);
 	}
 
-	const LivingUnit* nearestTarget = getNearestTarget();
-
-	auto dangerousEnemies = getDangerousEnemies();
+	const auto& dangerousEnemies = m_state->m_dangerousEnemies;
 	double totalEnemiesDamage = std::accumulate(dangerousEnemies.begin(), dangerousEnemies.end(), 0.0, 
 		[this](double sum, const model::Unit* enemy) {return sum + getMaxDamage(enemy); });
 
@@ -105,7 +103,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 			if (m_state->m_isLowHP)
 			{
 				const Point2D& nextPathPoint = m_reasonableBonus->m_smoothPathCache.empty() ? m_reasonableBonus->m_point : m_reasonableBonus->m_smoothPathCache.front();
-				auto enemies = filterPointers<const model::Unit*>([this](const model::Unit& u) {return isEnemy(u); }, world.getBuildings(), world.getWizards(), world.getMinions());
+				auto enemies = filterPointers<const model::Unit*>([this, &self](const model::Unit& u) {return isEnemy(u, self); }, world.getBuildings(), world.getWizards(), world.getMinions());
 
 				bool noEnemiesThatWay = enemies.end() == std::find_if(enemies.begin(), enemies.end(), 
 					[&nextPathPoint, &self](const model::Unit* enemy) 
@@ -124,178 +122,8 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 		debugMessage.setNextWaypoint(previousWaypoint);
 	}
 
-	// Если видим противника ...
-	if (nearestTarget != nullptr) 
-	{
-		double distance = self.getDistanceTo(*nearestTarget);
-
-		// ... и он в пределах досягаемости наших заклинаний, ...
-		const double shootingDistance = self.getCastRange();
-		if (distance <= shootingDistance) 
-		{
-			double angle = self.getAngleTo(*nearestTarget);
-
-			// ... то поворачиваемся к цели.
-			move.setTurn(angle);
-
-			bool isWizard = getWizard(nearestTarget) != nullptr;
-			if (isWizard && !isRetreating)
-			{
-				// might escape. This is workaround
-				double enenyAngle = nearestTarget->getAngleTo(self);
-				if (std::abs(enenyAngle) > game.getStaffSector())
-				{
-					double ticksToTurn = 1 + (std::abs(enenyAngle) - game.getStaffSector()) / game.getWizardMaxTurnAngle();
-					double desiredDistance = shootingDistance - ticksToTurn * game.getWizardStrafeSpeed();
-
-					if (self.getDistanceTo(*nearestTarget) > desiredDistance)
-					{
-						goTo(*nearestTarget, move, debugMessage);
-					}
-				}
-			}
-
-			// Если цель перед нами, ...
-
-			// TODO - more accurate mana regeneration
-			const double damageMm      = m_state->m_game.getMagicMissileDirectDamage();
-			const double damageFB      = m_state->m_game.getFrostBoltDirectDamage();
-			const double shootingAngle = game.getStaffSector() / 2.0;
-
-			double frostCooldownMana = m_state->m_game.getFrostBoltCooldownTicks() * m_state->m_game.getWizardBaseManaRegeneration()
-			                         - m_state->m_game.getMagicMissileManacost(); // usually, we're firing MM while FB cools down
-
-			bool isLastFrostBolt = ((m_state->m_self.getMana() + frostCooldownMana) / m_state->m_game.getFrostBoltManacost()) < 2.0;
-
-			auto targetMinion = getMinion(nearestTarget);
-			auto targetWizard = getWizard(nearestTarget);
-			bool canTakedownWithFBMM = nearestTarget->getLife() > damageMm && nearestTarget->getLife() < (damageFB + damageMm);
-
-			bool shouldShootLastFB = isLastFrostBolt &&
-				(isRetreating
-					|| (targetMinion != nullptr && targetMinion->getType() == model::MINION_FETISH_BLOWDART && canTakedownWithFBMM)
-					|| (targetWizard != nullptr && canTakedownWithFBMM)
-					/*TODO: || isKamikazeMode - shoot before die*/);
-
-			if (m_state->isReadyForAction(ACTION_FROST_BOLT) && shouldShootLastFB)
-			{
-				std::vector<const model::LivingUnit*> candidates;
-				candidates.reserve(16);
-
-				std::copy_if(dangerousEnemies.begin(), dangerousEnemies.end(), std::back_inserter(candidates), 
-					[this, shootingDistance, shootingAngle](const LivingUnit* unit)
-				{
-					return m_state->m_self.getDistanceTo(*unit) <= shootingDistance
-						&& std::abs(m_state->m_self.getAngleTo(*unit)) < shootingAngle;
-				});
-
-				std::sort(candidates.begin(), candidates.end(), [](const auto* left, const auto& right) {return left->getLife() < right->getLife(); });
-
-				// reverse iteration, because rightmost candidate has more health
-
-				auto canKillWizardIt = std::find_if(candidates.rbegin(), candidates.rend(),
-					[this, damageFB](const model::LivingUnit* u) {return getWizard(u) && u->getLife() < damageFB; });
-
-				auto canAlmostKillWizardIt = std::find_if(candidates.rbegin(), candidates.rend(),
-					[this, damageFB, damageMm](const model::LivingUnit* u) {return getWizard(u) && u->getLife() < (damageFB + damageMm); });
-
-				auto hasBonusIt = std::find_if(candidates.rbegin(), candidates.rend(),
-					[this, damageFB, damageMm](const model::LivingUnit* u) 
-				{
-					auto wizard = getWizard(u); 
-					return wizard &&
-						(hasStatus(wizard, model::STATUS_EMPOWERED) || hasStatus(wizard, model::STATUS_HASTENED) || hasStatus(wizard, model::STATUS_SHIELDED));
-				});
-
-				auto canKillAnyIt = std::find_if(candidates.rbegin(), candidates.rend(), 
-					[this, damageFB](const model::LivingUnit* u) { return u->getLife() < damageFB; });
-
-				auto canFreezeWizardIt = std::find_if(candidates.rbegin(), candidates.rend(), 
-					[this](const model::LivingUnit* u) { return getWizard(u) != nullptr; });
-
-				if (canKillWizardIt != candidates.rend())
-					nearestTarget = *canKillWizardIt;
-				else if (canAlmostKillWizardIt != candidates.rend())
-					nearestTarget = *canAlmostKillWizardIt;
-				else if (hasBonusIt != candidates.rend())
-					nearestTarget = *hasBonusIt;
-				else if (canKillAnyIt != candidates.rend())
-					nearestTarget = *canKillAnyIt;
-				else if (canFreezeWizardIt != candidates.rend())
-					nearestTarget = *canFreezeWizardIt;  // freeze most healthy enemy wizard when retreating (less healthy may be shoot soon)
-				else if (!candidates.empty())
-					nearestTarget = candidates.front();  // with minimal health
-
-				angle = m_state->m_self.getAngleTo(*nearestTarget);
-				distance = m_state->m_self.getDistanceTo(*nearestTarget);
-
-				move.setAction(ActionType::ACTION_FROST_BOLT);
-				move.setCastAngle(angle);
-				move.setMinCastDistance(distance - nearestTarget->getRadius() + game.getFrostBoltRadius());
-			}
-			else if (m_state->isReadyForAction(ACTION_FROST_BOLT) && !isLastFrostBolt)
-			{
-				if (abs(angle) < shootingAngle)
-				{
-					// ... то атакуем.
-					move.setAction(ActionType::ACTION_FROST_BOLT);
-					move.setCastAngle(angle);
-					move.setMinCastDistance(distance - nearestTarget->getRadius() + game.getFrostBoltRadius());
-				}
-			}
-			else if (m_state->isReadyForAction(ActionType::ACTION_MAGIC_MISSILE))
-			{
-				if (abs(angle) < game.getStaffSector() / 2.0)
-				{
-					// ... то атакуем.
-					move.setAction(ActionType::ACTION_MAGIC_MISSILE);
-					move.setCastAngle(angle);
-					move.setMinCastDistance(distance - nearestTarget->getRadius() + game.getMagicMissileRadius());
-				}
-			}
-			else if (m_state->isReadyForAction(ActionType::ACTION_STAFF))
-			{
-				if (distance < game.getStaffRange() + nearestTarget->getRadius())
-				{
-					move.setAction(ActionType::ACTION_STAFF);
-				}
-			}
-
-			if (m_reasonableBonus)
-			{
-				retreatTo(m_reasonableBonus->m_point, move, debugMessage);
-			}
-
-// 			if (m_state->isUnderMissile())
-// 			{
-// 				const auto& projectiles = m_state->m_world.getProjectiles();
-// 				auto mostDangerous = projectiles.end();
-// 				for (const StorableState::ProjectileInfo& projectileInfo : m_state->m_projectileInfos)
-// 				{
-// 					const auto& possibleTargets = projectileInfo.m_possibleTargets;
-// 					if (possibleTargets.end() == std::find(possibleTargets.begin(), possibleTargets.end(), m_state->m_self.getId()))
-// 						continue;
-// 
-// 					auto projectileIt = std::find_if(projectiles.begin(), projectiles.end(), [&projectileInfo](const auto& p) {return p.getId() == projectileInfo.m_id; });
-// 					assert(projectileIt != projectiles.end() && "should disappear from projectiles info");
-// 					if (projectileIt == projectiles.end())
-// 						continue;
-// 
-// 					if (mostDangerous == projectiles.end() || mostDangerous->getRadius() < projectileIt->getRadius())
-// 						mostDangerous = projectileIt;  // dart is the littlest, fireball is the biggest
-// 				}
-// 
-// 				if (mostDangerous != projectiles.end())
-// 				{
-// 					//Vec2d evasion = { -10, -10 };
-// 					move.setSpeed(-10);
-// 					move.setStrafeSpeed(-10);
-// 				}
-// 			}
-
-			return;
-		}
-	}
+	if (considerAttack(move, isRetreating, debugMessage))
+		return;
 
 	// Если нет других действий, просто продвигаемся вперёд.
 	if (move.getSpeed() < Point2D::k_epsilon && (std::abs(move.getTurn()) < PI/1000) && !isRetreating)
@@ -328,24 +156,178 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 	}
 }
 
-std::vector<const model::LivingUnit*> MyStrategy::getDangerousEnemies() const
+bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessage& debugMessage)
 {
-	const Point2D enemyBase{ m_state->m_world.getWidth() - 400, 400 };
-	bool isBetweenSpawnAndCorner = false;
-	for (const PredictedUnit& spawn : m_state->m_enemySpawnPredictions)
-		isBetweenSpawnAndCorner = isBetweenSpawnAndCorner || enemyBase.getDistanceTo(m_state->m_self) < enemyBase.getDistanceTo(spawn)*1.2/*hack*/;
+	const model::Wizard& self    = m_state->m_self;
+	const model::Game& game      = m_state->m_game;
+	const auto& dangerousEnemies = m_state->m_dangerousEnemies;
 
-	double spawnRadius = m_state->m_enemySpawnPredictions.empty() ? 1 : m_state->m_enemySpawnPredictions.front().getRadius();
-	int spawnTraversalTicks = static_cast<int>((isBetweenSpawnAndCorner ? spawnRadius * 2 : spawnRadius) / m_state->m_game.getWizardStrafeSpeed());
-	int noSpawnSafeTicks = m_state->m_nextMinionRespawnTick - m_state->m_world.getTickIndex() - spawnTraversalTicks;
+	const LivingUnit* nearestTarget = getNearestTarget();
+	if (nearestTarget == nullptr)
+		return false;
+	
+	double distance = self.getDistanceTo(*nearestTarget);
+	const double shootingDistance = self.getCastRange();
+	if (distance > shootingDistance)
+		return false;
 
-	auto emptyPredictions = std::vector<PredictedUnit>();
-	auto dangerousEnemies = filterPointers<const model::LivingUnit*>(
-		[this](const model::Unit& u) {return isEnemy(u) && m_state->m_self.getDistanceTo(u) < getSafeDistance(u); },
-		m_state->m_world.getBuildings(), m_state->m_world.getWizards(), m_state->m_world.getMinions(),
-		(noSpawnSafeTicks > 0 ? emptyPredictions : m_state->m_enemySpawnPredictions));
+	double angle = self.getAngleTo(*nearestTarget);
+	move.setTurn(angle);
 
-	return std::move(dangerousEnemies);
+	bool isWizard = getWizard(nearestTarget) != nullptr;
+	if (isWizard && !isRetreating)
+	{
+		// might escape. This is workaround
+		double enenyAngle = nearestTarget->getAngleTo(self);
+		if (std::abs(enenyAngle) > game.getStaffSector())
+		{
+			double ticksToTurn = 1 + (std::abs(enenyAngle) - game.getStaffSector()) / game.getWizardMaxTurnAngle();
+			double desiredDistance = shootingDistance - ticksToTurn * game.getWizardStrafeSpeed();
+
+			if (self.getDistanceTo(*nearestTarget) > desiredDistance)
+			{
+				goTo(*nearestTarget, move, debugMessage);
+			}
+		}
+	}
+
+	// TODO - more accurate mana regeneration
+	const double damageMm = m_state->m_game.getMagicMissileDirectDamage();
+	const double damageFB = m_state->m_game.getFrostBoltDirectDamage();
+	const double shootingAngle = game.getStaffSector() / 2.0;
+
+	double frostCooldownMana = m_state->m_game.getFrostBoltCooldownTicks() * m_state->m_game.getWizardBaseManaRegeneration()
+		- m_state->m_game.getMagicMissileManacost(); // usually, we're firing MM while FB cools down
+
+	bool isLastFrostBolt = ((m_state->m_self.getMana() + frostCooldownMana) / m_state->m_game.getFrostBoltManacost()) < 2.0;
+
+	auto targetMinion = getMinion(nearestTarget);
+	auto targetWizard = getWizard(nearestTarget);
+	bool canTakedownWithFBMM = nearestTarget->getLife() > damageMm && nearestTarget->getLife() < (damageFB + damageMm);
+
+	bool shouldShootLastFB = isLastFrostBolt &&
+		(isRetreating
+			|| (targetMinion != nullptr && targetMinion->getType() == model::MINION_FETISH_BLOWDART && canTakedownWithFBMM)
+			|| (targetWizard != nullptr && canTakedownWithFBMM)
+			/*TODO: || isKamikazeMode - shoot before die*/);
+
+	if (m_state->isReadyForAction(ACTION_FROST_BOLT) && shouldShootLastFB)
+	{
+		std::vector<const model::LivingUnit*> candidates;
+		candidates.reserve(16);
+
+		std::copy_if(dangerousEnemies.begin(), dangerousEnemies.end(), std::back_inserter(candidates),
+			[this, shootingDistance, shootingAngle](const LivingUnit* unit)
+		{
+			return m_state->m_self.getDistanceTo(*unit) <= shootingDistance
+				&& std::abs(m_state->m_self.getAngleTo(*unit)) < shootingAngle;
+		});
+
+		std::sort(candidates.begin(), candidates.end(), [](const auto* left, const auto& right) {return left->getLife() < right->getLife(); });
+
+		// reverse iteration, because rightmost candidate has more health
+
+		auto canKillWizardIt = std::find_if(candidates.rbegin(), candidates.rend(),
+			[this, damageFB](const model::LivingUnit* u) {return getWizard(u) && u->getLife() < damageFB; });
+
+		auto canAlmostKillWizardIt = std::find_if(candidates.rbegin(), candidates.rend(),
+			[this, damageFB, damageMm](const model::LivingUnit* u) {return getWizard(u) && u->getLife() < (damageFB + damageMm); });
+
+		auto hasBonusIt = std::find_if(candidates.rbegin(), candidates.rend(),
+			[this, damageFB, damageMm](const model::LivingUnit* u)
+		{
+			auto wizard = getWizard(u);
+			return wizard &&
+				(hasStatus(wizard, model::STATUS_EMPOWERED) || hasStatus(wizard, model::STATUS_HASTENED) || hasStatus(wizard, model::STATUS_SHIELDED));
+		});
+
+		auto canKillAnyIt = std::find_if(candidates.rbegin(), candidates.rend(),
+			[this, damageFB](const model::LivingUnit* u) { return u->getLife() < damageFB; });
+
+		auto canFreezeWizardIt = std::find_if(candidates.rbegin(), candidates.rend(),
+			[this](const model::LivingUnit* u) { return getWizard(u) != nullptr; });
+
+		if (canKillWizardIt != candidates.rend())
+			nearestTarget = *canKillWizardIt;
+		else if (canAlmostKillWizardIt != candidates.rend())
+			nearestTarget = *canAlmostKillWizardIt;
+		else if (hasBonusIt != candidates.rend())
+			nearestTarget = *hasBonusIt;
+		else if (canKillAnyIt != candidates.rend())
+			nearestTarget = *canKillAnyIt;
+		else if (canFreezeWizardIt != candidates.rend())
+			nearestTarget = *canFreezeWizardIt;  // freeze most healthy enemy wizard when retreating (less healthy may be shoot soon)
+		else if (!candidates.empty())
+			nearestTarget = candidates.front();  // with minimal health
+
+		angle = m_state->m_self.getAngleTo(*nearestTarget);
+		distance = m_state->m_self.getDistanceTo(*nearestTarget);
+
+		move.setAction(ActionType::ACTION_FROST_BOLT);
+		move.setCastAngle(angle);
+		move.setMinCastDistance(distance - nearestTarget->getRadius() + game.getFrostBoltRadius());
+	}
+	else if (m_state->isReadyForAction(ACTION_FROST_BOLT) && !isLastFrostBolt)
+	{
+		if (abs(angle) < shootingAngle)
+		{
+			// ... то атакуем.
+			move.setAction(ActionType::ACTION_FROST_BOLT);
+			move.setCastAngle(angle);
+			move.setMinCastDistance(distance - nearestTarget->getRadius() + game.getFrostBoltRadius());
+		}
+	}
+	else if (m_state->isReadyForAction(ActionType::ACTION_MAGIC_MISSILE))
+	{
+		if (abs(angle) < game.getStaffSector() / 2.0)
+		{
+			// ... то атакуем.
+			move.setAction(ActionType::ACTION_MAGIC_MISSILE);
+			move.setCastAngle(angle);
+			move.setMinCastDistance(distance - nearestTarget->getRadius() + game.getMagicMissileRadius());
+		}
+	}
+	else if (m_state->isReadyForAction(ActionType::ACTION_STAFF))
+	{
+		if (distance < game.getStaffRange() + nearestTarget->getRadius())
+		{
+			move.setAction(ActionType::ACTION_STAFF);
+		}
+	}
+
+	if (m_reasonableBonus)
+	{
+		retreatTo(m_reasonableBonus->m_point, move, debugMessage);
+	}
+
+	// 			if (m_state->isUnderMissile())
+	// 			{
+	// 				const auto& projectiles = m_state->m_world.getProjectiles();
+	// 				auto mostDangerous = projectiles.end();
+	// 				for (const StorableState::ProjectileInfo& projectileInfo : m_state->m_projectileInfos)
+	// 				{
+	// 					const auto& possibleTargets = projectileInfo.m_possibleTargets;
+	// 					if (possibleTargets.end() == std::find(possibleTargets.begin(), possibleTargets.end(), m_state->m_self.getId()))
+	// 						continue;
+	// 
+	// 					auto projectileIt = std::find_if(projectiles.begin(), projectiles.end(), [&projectileInfo](const auto& p) {return p.getId() == projectileInfo.m_id; });
+	// 					assert(projectileIt != projectiles.end() && "should disappear from projectiles info");
+	// 					if (projectileIt == projectiles.end())
+	// 						continue;
+	// 
+	// 					if (mostDangerous == projectiles.end() || mostDangerous->getRadius() < projectileIt->getRadius())
+	// 						mostDangerous = projectileIt;  // dart is the littlest, fireball is the biggest
+	// 				}
+	// 
+	// 				if (mostDangerous != projectiles.end())
+	// 				{
+	// 					//Vec2d evasion = { -10, -10 };
+	// 					move.setSpeed(-10);
+	// 					move.setStrafeSpeed(-10);
+	// 				}
+	// 			}
+	
+	return true;
 }
 
 bool MyStrategy::isUnitSeeing(const model::Unit* unit, const Point2D& point)
@@ -438,6 +420,7 @@ void MyStrategy::initState(const model::Wizard& self, const model::World& world,
 {
 	m_state = std::make_unique<State>(this, self, world, game, move, m_oldState);
 	m_state->updateDispositionAround();
+	m_state->updateDangerousEnemies();
 
 	if (m_waypoints.empty())
 	{
@@ -553,7 +536,7 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 	const BonusSpawn* nearest = nullptr;
 	double minPathDistance = std::numeric_limits<double>::infinity();
 
-	auto enemiesAround = getDangerousEnemies();
+	const auto& enemiesAround = m_state->m_dangerousEnemies;
 
 	for (BonusSpawn& spawn : m_state->m_bonuses)
 	{

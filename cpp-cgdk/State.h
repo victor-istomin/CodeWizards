@@ -80,6 +80,7 @@ struct State
 	typedef std::map<long long, const model::Unit*>   UnitById;
 	typedef std::map<std::type_index, UnitById>       UnitByType;
 	typedef std::vector<const model::Unit*> PointsVector;
+	typedef std::vector<const model::LivingUnit*> LivingUnits;
 	typedef std::vector<PredictedUnit>      PredictedUnits;
 	typedef std::vector<model::SkillType>   Skills;
 	typedef StorableState::Projectiles      Projectiles;
@@ -91,6 +92,7 @@ struct State
 	const StorableState& m_storedState;
 	BonusSpawns          m_bonuses;
 	PredictedUnits       m_enemySpawnPredictions;
+	LivingUnits          m_dangerousEnemies;
 	Skills               m_learnedSkills;
 	Disposition          m_disposionAround;
 	Projectiles          m_projectileInfos;
@@ -116,6 +118,8 @@ struct State
 
 	int lastBonusSpawnTick() const { return (m_world.getTickIndex() / m_game.getBonusAppearanceIntervalTicks()) * m_game.getBonusAppearanceIntervalTicks(); }
 	int nextBonusSpawnTick() const { return lastBonusSpawnTick() + m_game.getBonusAppearanceIntervalTicks(); }
+
+	void updateDangerousEnemies();
 
 	bool isReadyForAction(model::ActionType action) const              { return m_cooldownTicks[action] == 0; }
 	bool isUnderMissile() const                                        { return !m_dangerousProjectiles.empty(); }
@@ -155,6 +159,7 @@ struct State
 			m_storableState.m_projectiles = m_state.m_projectileInfos;
 		}
 	};
+
 };
 
 
