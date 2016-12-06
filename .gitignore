@@ -30,6 +30,15 @@
 
 # Project-specific
 cpp-cgdk/.vs
+cpp-cgdk/*.vspx
+cpp-cgdk/*.diagsession
 cpp-cgdk/cpp-cgdk.VC*
 local-runner/plugins/*.class
 local-runner/plugins/model/*.class
+local-runner/*.log
+local-runner/*.json
+cpp-cgdk/*.i-*
+cpp-cgdk/*.suppress
+cpp-cgdk/*.zip
+cpp-cgdk/*.log
+*.zip

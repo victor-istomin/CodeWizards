@@ -23,168 +23,12 @@
 #include <cmath>
 #include <array>
 #include <cassert>
+#include <typeinfo>
+#include <typeindex>
+#include "BonusSpawn.h"
+#include "State.h"
 
-struct BonusSpawn
-{
-	enum BonusState
-	{
-		UNKNOWN = 0,   // don't know whether there is a bonus
-		HAS_BONUS,
-		NO_BONUS,
-	};
 
-	struct WizardsHealth
-	{
-		double enemies;
-		double teammates;
-
-		WizardsHealth() : enemies(0), teammates(0) {}
-	};
-
-	Point2D    m_point;
-	BonusState m_state;          // true if someone has collected bonus
-	int        m_lastCheckTick;
-	int        m_teamateCompetitors;
-	double     m_dangerHandicap;
-
-	Map::PointPath m_smoothPathCache;
-	Map::TilesPath m_tilesPathCache;
-// 	WizardsHealth  m_wizardsHp;   // maybe, bad idea
-
-	static const size_t  COUNT = 2;
-	static const Point2D RESPAWN_POINTS[];
-	static const double  DANGER_HANDICAP;
-
-	BonusSpawn(const Point2D& point, BonusState state, double handicap = 0) 
-		: m_point(point), m_state(state), m_lastCheckTick(0), m_dangerHandicap(handicap), m_teamateCompetitors(0) {}
-};
-
-typedef std::array<BonusSpawn, BonusSpawn::COUNT> BonusSpawns;
-typedef std::vector<long long>                    Ids;
-
-struct StorableState
-{
-	struct ProjectileInfo
-	{
-		long long      m_id;
-		long long      m_ownerUnitId;
-		model::Faction m_faction;
-		int            m_detectionTick;
-		Point2D        m_detectionPoint;
-		double         m_radius;
-		Vec2d          m_speed;
-		Ids            m_possibleTargets;
-
-		ProjectileInfo(const model::Projectile& p, int tick)
-			: m_id(p.getId()), m_ownerUnitId(p.getOwnerUnitId()), m_faction(p.getFaction())
-			, m_detectionTick(tick), m_detectionPoint(p), m_radius(p.getRadius()), m_speed(p.getSpeedX(), p.getSpeedY()) 
-			, m_possibleTargets()
-		{}
-
-		friend bool operator==(const ProjectileInfo& a, const model::Projectile& b);
-		friend bool operator==(const model::Projectile& a, const ProjectileInfo& b);
-	};
-
-	typedef std::vector<ProjectileInfo>  Projectiles;
-	typedef std::unique_ptr<model::Move> MovePtr;
-
-	MovePtr     m_previousMove;
-	BonusSpawns m_bonuses; 
-	Projectiles m_projectiles;
-
-	StorableState() 
-		: m_previousMove()
-		, m_bonuses{ BonusSpawn(BonusSpawn::RESPAWN_POINTS[0], BonusSpawn::NO_BONUS, BonusSpawn::DANGER_HANDICAP),   // because it's closer to enemy's tower on mid lane
-					 BonusSpawn(BonusSpawn::RESPAWN_POINTS[1], BonusSpawn::NO_BONUS) }
-	{}
-};
-
-class MyStrategy;
-struct State
-{
-	static const double LOW_HP_FACTOR;
-	static const int    COOLDOWN_INF = 0xFFFF;
-
-	struct Disposition
-	{
-		int enemyWizards;
-		int enemyMinions;
-		int enemyBuildings;
-		int teammateWizards;
-		int teammateMinions;
-		int teammateBuildings;
-
-		double movableEnemyHP;
-		double movebleTeammatesHP;
-
-		Disposition() 
-			: enemyWizards(0), enemyMinions(0), enemyBuildings(0), movableEnemyHP(0.0)
-			, teammateWizards(0), teammateMinions(0), teammateBuildings(0), movebleTeammatesHP(0.0) {}
-
-		int enemiesTotal() const   { return enemyWizards + enemyBuildings + enemyMinions; }
-		int teammatesCount() const { return teammateWizards + teammateBuildings + teammateMinions; }
-	};
-
-	typedef std::vector<const model::Unit*> PointsVector;
-	typedef std::vector<PredictedUnit>      PredictedUnits;
-	typedef std::vector<model::SkillType>   Skills;
-	typedef StorableState::Projectiles      Projectiles;
-
-	const model::Wizard& m_self;
-	const model::World&  m_world;
-	const model::Game&   m_game;
-	const model::Move&   m_move;
-	const StorableState& m_storedState;
-	BonusSpawns          m_bonuses;
-	PredictedUnits       m_enemySpawnPredictions;
-	Skills               m_learnedSkills;
-	Disposition          m_disposionAround;
-	Projectiles          m_projectileInfos;
-	const MyStrategy*    m_strategy;
-
-	int    m_nextMinionRespawnTick;
-	double m_estimatedHP;
-	bool   m_isUnderMissile;
-	bool   m_isLowHP;
-	bool   m_isHastened;
-	bool   m_isGoingToBonus;  // not yet implemented, always false
-
-	std::array<int, model::_ACTION_COUNT_> m_cooldownTicks;
-
-	State(const MyStrategy* strategy, const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, const StorableState& m_oldState);
-
-	void updateProjectiles();
-	void updateBonuses();
-	void updatePredictions();
-	void updateSkillsAndActions();
-	void updateDispositionAround();
-
-	int lastBonusSpawnTick() const { return (m_world.getTickIndex() / m_game.getBonusAppearanceIntervalTicks()) * m_game.getBonusAppearanceIntervalTicks(); }
-	int nextBonusSpawnTick() const { return lastBonusSpawnTick() + m_game.getBonusAppearanceIntervalTicks(); }
-
-	bool isReadyForAction(model::ActionType action) const              { return m_cooldownTicks[action] == 0; }
-	bool isGotStuck() const
-	{
-		return  std::hypot(m_self.getSpeedX(), m_self.getSpeedY()) < Point2D::k_epsilon
-			&&  m_storedState.m_previousMove != nullptr
-			&& (m_storedState.m_previousMove->getSpeed() > Point2D::k_epsilon || m_storedState.m_previousMove->getStrafeSpeed() > Point2D::k_epsilon); 
-	}
-
-	struct HistoryWriter
-	{
-		const State&   m_state;
-		StorableState& m_storableState;
-
-		HistoryWriter(const State& state, StorableState& oldState) : m_state(state), m_storableState(oldState) {}
-		~HistoryWriter()
-		{ 
-			m_storableState.m_previousMove = std::make_unique<model::Move>(m_state.m_move); 
-			std::copy(m_state.m_bonuses.begin(), m_state.m_bonuses.end(), m_storableState.m_bonuses.begin());
-
-			m_storableState.m_projectiles = m_state.m_projectileInfos;
-		}
-	};
-};
 
 class Map;
 class DebugVisualizer;
@@ -198,7 +42,7 @@ public:
 	typedef std::vector<Point2D>      TWaypoints;
 	typedef std::map<model::LaneType, TWaypoints> TWaypointsMap;
 
-	static const model::SkillType SKILLS_TO_LEARN[];
+	static const std::vector<model::SkillType> SKILLS_TO_LEARN;
 	static const double WAYPOINT_RADIUS;
 
 private:
@@ -257,6 +101,9 @@ private:
 	std::vector<const model::LivingUnit*> getDangerousEnemies() const;
 
 	void learnSkill(model::Move& move);
+
+// 	struct SpeedLimits 
+// 	void getWizardMaxSpeed();
 
 public:
     MyStrategy();

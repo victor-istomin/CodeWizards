@@ -247,12 +247,14 @@
     <ClCompile Include="PathFinder.cpp" />
     <ClCompile Include="RemoteProcessClient.cpp" />
     <ClCompile Include="Runner.cpp" />
+    <ClCompile Include="State.cpp" />
     <ClCompile Include="Strategy.cpp" />
     <ClCompile Include="Utils.cpp" />
     <ClCompile Include="WorldMap.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\russian-ai-cup-visual\clients\cpp\Debug.h" />
+    <ClInclude Include="BonusSpawn.h" />
     <ClInclude Include="csimplesocket\ActiveSocket.h" />
     <ClInclude Include="csimplesocket\Host.h" />
     <ClInclude Include="csimplesocket\HTTPActiveSocket.h" />
@@ -295,6 +297,7 @@
     <ClInclude Include="Point2D.h" />
     <ClInclude Include="RemoteProcessClient.h" />
     <ClInclude Include="Runner.h" />
+    <ClInclude Include="State.h" />
     <ClInclude Include="Strategy.h" />
     <ClInclude Include="Utils.h" />
     <ClInclude Include="Vec.h" />
