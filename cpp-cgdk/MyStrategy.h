@@ -107,7 +107,8 @@ public:
 
     void move(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move) override;
 
-	bool considerAttack(model::Move &move, bool isRetreating, DebugMessage& debugMessage);
+	bool considerRetreat(model::Move& move, DebugMessage& debugMessage);
+	bool considerAttack (model::Move &move, bool isRetreating, DebugMessage& debugMessage);
 
 	double getSafeDistance(const model::Unit& enemy) const;
 

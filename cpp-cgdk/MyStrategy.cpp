@@ -72,55 +72,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 		debugMessage.visualizeBonuses(m_state->m_bonuses);
 	}
 
-	const auto& dangerousEnemies = m_state->m_dangerousEnemies;
-	double totalEnemiesDamage = std::accumulate(dangerousEnemies.begin(), dangerousEnemies.end(), 0.0, 
-		[this](double sum, const model::Unit* enemy) {return sum + getMaxDamage(enemy); });
-
-	bool isNearOrk = dangerousEnemies.end() != std::find_if(dangerousEnemies.begin(), dangerousEnemies.end(),
-		[this](const Unit* u) { return getMinion(u) != nullptr && getMinion(u)->getType() == model::MINION_ORC_WOODCUTTER; });
-
-	bool isTooCloseToEnemy = isNearOrk || self.getLife() < totalEnemiesDamage;
-	if (m_state->m_estimatedHP < totalEnemiesDamage)
-	{
-		m_state->m_isLowHP = true;  // this also activates "don't retreat too far" feature
-	}
-
-	const State::Disposition& around = m_state->m_disposionAround;
-	double relativeEnemiesAmount = around.movableEnemyHP / around.movebleTeammatesHP;
-	const double rushHpThreshold = around.teammateMinions != 0 ? 3.0 : 2.0;
-	bool isEnemyRushing = relativeEnemiesAmount >= 2.0 && around.enemyWizards != 0;  // TODO - take teammate towers into account?
-
-	// Если осталось мало жизненной энергии, отступаем к предыдущей ключевой точке на линии.
-	bool isRetreating = isTooCloseToEnemy || m_state->m_isLowHP || isEnemyRushing;
-	if (isRetreating) 
-	{
-		// TODO - consider retreating to most safe point both in case of bonus or not bonus
-
-		Point2D previousWaypoint = getPreviousWaypoint();
-		if (m_reasonableBonus)
-		{
-			bool canGet = !m_state->m_isLowHP;
-			if (m_state->m_isLowHP)
-			{
-				const Point2D& nextPathPoint = m_reasonableBonus->m_smoothPathCache.empty() ? m_reasonableBonus->m_point : m_reasonableBonus->m_smoothPathCache.front();
-				auto enemies = filterPointers<const model::Unit*>([this, &self](const model::Unit& u) {return isEnemy(u, self); }, world.getBuildings(), world.getWizards(), world.getMinions());
-
-				bool noEnemiesThatWay = enemies.end() == std::find_if(enemies.begin(), enemies.end(), 
-					[&nextPathPoint, &self](const model::Unit* enemy) 
-				{
-					return std::abs(self.getAngleTo(*enemy) - self.getAngleTo(nextPathPoint.m_x, nextPathPoint.m_y)) > (PI / 2);
-				});
-
-				canGet = noEnemiesThatWay;
-			}
-
-			if (canGet)
-				previousWaypoint = m_reasonableBonus->m_point;
-		}
-
-		retreatTo(previousWaypoint, move, debugMessage);
-		debugMessage.setNextWaypoint(previousWaypoint);
-	}
+	bool isRetreating = considerRetreat(move, debugMessage);
 
 	if (considerAttack(move, isRetreating, debugMessage))
 		return;
@@ -154,6 +106,64 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 			move.setTurn(angle);
 		}
 	}
+}
+
+bool MyStrategy::considerRetreat(Move& move, DebugMessage& debugMessage)
+{
+	const model::Wizard& self  = m_state->m_self;
+	const model::World&  world = m_state->m_world;
+
+	const auto& dangerousEnemies = m_state->m_dangerousEnemies;
+	double totalEnemiesDamage = std::accumulate(dangerousEnemies.begin(), dangerousEnemies.end(), 0.0,
+		[this](double sum, const model::Unit* enemy) {return sum + getMaxDamage(enemy); });
+
+	bool isNearOrk = dangerousEnemies.end() != std::find_if(dangerousEnemies.begin(), dangerousEnemies.end(),
+		[this](const Unit* u) { return getMinion(u) != nullptr && getMinion(u)->getType() == model::MINION_ORC_WOODCUTTER; });
+
+	bool isTooCloseToEnemy = isNearOrk || self.getLife() < totalEnemiesDamage;
+	if (m_state->m_estimatedHP < totalEnemiesDamage)
+	{
+		m_state->m_isLowHP = true;  // this also activates "don't retreat too far" feature
+	}
+
+	const State::Disposition& around = m_state->m_disposionAround;
+	double relativeEnemiesAmount = around.movableEnemyHP / around.movebleTeammatesHP;
+	const double rushHpThreshold = around.teammateMinions != 0 ? 3.0 : 2.0;
+	bool isEnemyRushing = relativeEnemiesAmount >= 2.0 && around.enemyWizards != 0;  // TODO - take teammate towers into account?
+
+	// Если осталось мало жизненной энергии, отступаем к предыдущей ключевой точке на линии.
+	bool isRetreating = isTooCloseToEnemy || m_state->m_isLowHP || isEnemyRushing;
+	if (isRetreating)
+	{
+		// TODO - consider retreating to most safe point both in case of bonus or not bonus
+
+		Point2D previousWaypoint = getPreviousWaypoint();
+		if (m_reasonableBonus)
+		{
+			bool canGet = !m_state->m_isLowHP;
+			if (m_state->m_isLowHP)
+			{
+				const Point2D& nextPathPoint = m_reasonableBonus->m_smoothPathCache.empty() ? m_reasonableBonus->m_point : m_reasonableBonus->m_smoothPathCache.front();
+				auto enemies = filterPointers<const model::Unit*>([this, &self](const model::Unit& u) {return isEnemy(u, self); }, world.getBuildings(), world.getWizards(), world.getMinions());
+
+				bool noEnemiesThatWay = enemies.end() == std::find_if(enemies.begin(), enemies.end(),
+					[&nextPathPoint, &self](const model::Unit* enemy)
+				{
+					return std::abs(self.getAngleTo(*enemy) - self.getAngleTo(nextPathPoint.m_x, nextPathPoint.m_y)) > (PI / 2);
+				});
+
+				canGet = noEnemiesThatWay;
+			}
+
+			if (canGet)
+				previousWaypoint = m_reasonableBonus->m_point;
+		}
+
+		retreatTo(previousWaypoint, move, debugMessage);
+		debugMessage.setNextWaypoint(previousWaypoint);
+	}
+
+	return isRetreating;
 }
 
 bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessage& debugMessage)
