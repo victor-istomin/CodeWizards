@@ -63,9 +63,15 @@ public:
 	{
 		double a = angle();
 
-		m_x = length * cos(a);
-		m_y = length * sin(a);
-		return *this;
+		double cos = std::cos(a);
+		double sin = std::sin(a);
+
+		return *this = truncate(length, cos, sin);
+	}
+
+	static Vec2d truncate(double length, double cos, double sin)
+	{
+		return Vec2d{ length * cos, length * sin };
 	}
 
 	double angle() const

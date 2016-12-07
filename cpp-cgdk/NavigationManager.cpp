@@ -229,7 +229,6 @@ bool NavigationManager::stageInCombat(model::Move& move)
 
 bool NavigationManager::goTo(const Point2D& point, model::Move& move, bool preserveAngle /*= false*/)
 {
-	// TODO - add 2 modes: preserve unit angle or rotate self
 	Timer timer(__FUNCTION__);
 
 	Point2D target = point;
@@ -284,14 +283,15 @@ bool NavigationManager::goTo(const Point2D& point, model::Move& move, bool prese
 	Limits speedLimit = getMaxSpeed(&self);
 	double hypotSpeed = speedLimit.hypot(isForward);
 
-	if (forwardSpeed > distanceTo && !m_isRetreating)
-		forwardSpeed = distanceTo;
+	Vec2d moveVector = Vec2d::truncate(hypotSpeed, cos, sin);
+	applySpeedLimit(moveVector, speedLimit);
 
-
-	Vec2d moveVector = Vec2d(speedLimit.forward * cos, forwardSpeed * sin);
-	moveVector.truncate(speedLimit.hypot(isForward));
+	if (moveVector.length() > distanceTo)
+		moveVector.truncate(distanceTo);
 
 	moveVector = getAlternateMoveVector(moveVector);
+	applySpeedLimit(moveVector, speedLimit);
+
 	move.setSpeed(moveVector.m_x);
 	move.setStrafeSpeed(moveVector.m_y);
 
@@ -304,6 +304,23 @@ bool NavigationManager::goTo(const Point2D& point, model::Move& move, bool prese
 	}
 
 	return isPathAcceptable(moveVector, smoothPath);
+}
+
+
+void NavigationManager::applySpeedLimit(Vec2d &moveVector, const Limits& speedLimit)
+{
+	if (moveVector.m_x >= speedLimit.forward)
+	{
+		moveVector /= moveVector.m_x / speedLimit.forward + 0.001;
+	}
+	if (moveVector.m_x <= speedLimit.backward)
+	{
+		moveVector /= moveVector.m_x / speedLimit.backward + 0.001;
+	}
+	if (std::abs(moveVector.m_y) >= speedLimit.strafe)
+	{
+		moveVector /= std::abs(moveVector.m_y) / speedLimit.strafe + 0.001;
+	}
 }
 
 bool NavigationManager::isPathAcceptable(const Vec2d& moveVector, const Map::PointPath& smoothPath)
@@ -486,29 +503,35 @@ NavigationManager::Limits NavigationManager::getMaxSpeed(const model::Wizard* wi
 	limits.backward = -game.getWizardBackwardSpeed();
 	limits.strafe   = game.getWizardStrafeSpeed();
 
-	int learnedSkills = std::count_if(m_state.m_learnedSkills.begin(), m_state.m_learnedSkills.end(),
-		[](const model::SkillType& s) { return s == model::SKILL_MOVEMENT_BONUS_FACTOR_PASSIVE_1 || s == model::SKILL_MOVEMENT_BONUS_FACTOR_PASSIVE_2
-		|| s == model::SKILL_MOVEMENT_BONUS_FACTOR_AURA_1 || s == s == model::SKILL_MOVEMENT_BONUS_FACTOR_AURA_2; });
+	static const int MAX_SKILL_COUNT = 4;
+	int learnedSkills = std::count_if(m_state.m_learnedSkills.begin(), m_state.m_learnedSkills.end(), [](const model::SkillType& s) 
+	{ 
+		return s == model::SKILL_MOVEMENT_BONUS_FACTOR_PASSIVE_1 || s == model::SKILL_MOVEMENT_BONUS_FACTOR_PASSIVE_2
+		    || s == model::SKILL_MOVEMENT_BONUS_FACTOR_AURA_1    || s == model::SKILL_MOVEMENT_BONUS_FACTOR_AURA_2; 
+	});
 
 	auto nearTeammates = filterPointers<const model::Wizard*>(
 		[this, wizard, &game](const model::Wizard& w) {return w.getFaction() == wizard->getFaction() && wizard->getDistanceTo(w) < game.getAuraSkillRange(); },
 		m_state.m_world.getWizards());
 
 	bool hasAura1 = false, hasAura2 = false;
-	for (const auto* teammate : nearTeammates)
+	if (learnedSkills < MAX_SKILL_COUNT)
 	{
-		const std::vector<model::SkillType>& auras = teammate->getSkills;
-		hasAura1 = hasAura1 || auras.end() != std::find(auras.begin(), auras.end(), model::SKILL_MOVEMENT_BONUS_FACTOR_AURA_1);
-		hasAura2 = hasAura2 || auras.end() != std::find(auras.begin(), auras.end(), model::SKILL_MOVEMENT_BONUS_FACTOR_AURA_2);
+		for (const auto* teammate : nearTeammates)
+		{
+			const std::vector<model::SkillType>& auras = teammate->getSkills();
+			hasAura1 = hasAura1 || auras.end() != std::find(auras.begin(), auras.end(), model::SKILL_MOVEMENT_BONUS_FACTOR_AURA_1);
+			hasAura2 = hasAura2 || auras.end() != std::find(auras.begin(), auras.end(), model::SKILL_MOVEMENT_BONUS_FACTOR_AURA_2);
+		}
 	}
 
-	int  aurasCount = (hasAura1 ? 1 : 0) + (hasAura2 ? 1 : 0);
+	int aurasCount = (hasAura1 ? 1 : 0) + (hasAura2 ? 1 : 0);
+	int totalSkillsCount = std::min(MAX_SKILL_COUNT, learnedSkills + aurasCount);
 	bool isHastened = m_state.m_isHastened;
 
 	double factor = 1 + learnedSkills * game.getMovementBonusFactorPerSkillLevel()
-	                  + aurasCount * game.getMovementBonusFactorPerSkillLevel()
 	                  + (isHastened ? game.getHastenedMovementBonusFactor() : 0);
 
-	limits.increaseBy(factor);
+	limits.multiply(factor);
 	return limits;
 }

@@ -72,17 +72,17 @@ private:
 	{
 		double forward, backward, strafe;
 
-		void increaseBy(double factor)
+		void multiply(double factor)
 		{
-			forward += forward * factor;
-			backward += backward * factor;
-			strafe += strafe * factor;
+			forward  *= factor;
+			backward *= factor;
+			strafe   *= factor;
 		}
 
 		double hypot(bool isForward) const { return std::hypot((isForward ? forward : backward), strafe); }
 	};
 
 	Limits getMaxSpeed(const model::Wizard* wizard);
-
+	void applySpeedLimit(Vec2d& moveVector, const Limits& speedLimit);
 };
 

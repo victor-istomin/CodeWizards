@@ -54,6 +54,11 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 {
 	Timer timer(__FUNCTION__, world.getMyPlayer().getName(), self.getOwnerPlayerId());
 
+	/* debug code: check last move vector */
+// 	Vec2d lastMove{ self.getSpeedX(), self.getSpeedY() };
+// 	double angle = lastMove.angle() - self.getAngle();
+// 	Vec2d lastSpeed{ lastMove.length() * std::cos(angle), lastMove.length() * std::sin(angle) };
+
 	DebugMessage debugMessage(*m_visualizer, self, world);
 	initState(self, world, game, move, debugMessage);
 	State::HistoryWriter updater(*m_state, m_oldState);
