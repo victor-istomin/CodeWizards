@@ -64,5 +64,7 @@ private:
 	size_t GetCurrentWaypointIndex();
 
 	Point2D getPreviousWaypoint();
+
+	long long getTeammateIdToHelp() const;
 };
 

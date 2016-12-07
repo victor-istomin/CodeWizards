@@ -128,17 +128,16 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 		return false;
 
 	bool isPredictionMode = false;
-	Point2D predictionPoint = *nearestTarget;
+	Point2D speed { nearestTarget->getSpeedX(), nearestTarget->getSpeedY() };
+	Point2D predictionPoint = Point2D(*nearestTarget) + speed;
+	distance = predictionPoint.getDistanceTo(self);  // always slightly predict in order to shoot better while enemy moving perpendicularly 
+
 	if (distance > shootingDistance)
 	{
 		isPredictionMode = true;
-		Point2D speed{ nearestTarget->getSpeedX(), nearestTarget->getSpeedY() };
-		predictionPoint = Point2D(*nearestTarget) + speed;
 
-		distance = predictionPoint.getDistanceTo(self);
-		int tickToHit   = std::max(1, static_cast<int>(distance / game.getMagicMissileSpeed()));
-		int ticksToTurn = std::abs(static_cast<int>(m_state->m_self.getAngleTo(*nearestTarget) / game.getWizardMaxTurnAngle()));  // TODO - hastened?
-
+		int tickToHit      = std::max(1, static_cast<int>(distance / game.getMagicMissileSpeed()));
+		int ticksToTurn    = std::abs(static_cast<int>(m_state->m_self.getAngleTo(*nearestTarget) / game.getWizardMaxTurnAngle()));  // TODO - hastened?
 		int ticksToPredict = isRetreating ? tickToHit * 2 / 3 : tickToHit / 2;
 
 		if (distance > shootingDistance && m_state->m_cooldownTicks[model::ACTION_MAGIC_MISSILE] <= ticksToTurn)
@@ -166,7 +165,7 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 		}
 	}
 
-	double angle = isPredictionMode ? self.getAngleTo(predictionPoint.m_x, predictionPoint.m_y) : self.getAngleTo(*nearestTarget);
+	double angle = self.getAngleTo(predictionPoint.m_x, predictionPoint.m_y);  // always slightly predict in order to shoot better while enemy moving perpendicularly 
 	move.setTurn(angle);
 
 	m_navigation->setForcePreserveAngle(true);
@@ -282,11 +281,6 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 			move.setAction(ActionType::ACTION_STAFF);
 		}
 	}
-
-// 	if (m_reasonableBonus)
-// 	{
-// 		retreatTo(m_reasonableBonus->m_point, move, debugMessage);
-// 	}
 
 	// 			if (m_state->isUnderMissile())
 	// 			{

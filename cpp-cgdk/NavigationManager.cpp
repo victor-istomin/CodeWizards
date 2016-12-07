@@ -132,10 +132,49 @@ bool NavigationManager::stageRetreat(model::Move& move)
 		return false;
 
 	// TODO - port "don't retreat too far" feature from MyStrategy::retreatTo()
+	const model::Wizard& self  = m_state.m_self;
+	const model::World&  world = m_state.m_world;
 
-	bool aimForward = !m_state.m_dangerousEnemies.empty();
+	const model::Unit* enemy = nullptr;
+	auto findNearestEnemy = [&self, &world, &enemy, this](const model::Unit& unit) 
+	{
+		if (unit.getFaction() == self.getFaction())  
+			return;
+
+		if (enemy == nullptr)
+		{
+			enemy = &unit;
+		}
+		else
+		{
+			double safeGap    = self.getDistanceTo(unit) -   m_strategy.getSafeDistance(unit);
+			double oldSafeGap = self.getDistanceTo(*enemy) - m_strategy.getSafeDistance(*enemy);
+
+			if (safeGap < oldSafeGap)
+				enemy = &unit;
+		}
+	};
+
+	std::for_each(world.getWizards().begin(), world.getWizards().end(),     findNearestEnemy);
+	std::for_each(world.getMinions().begin(), world.getMinions().end(),     findNearestEnemy);
+	std::for_each(world.getBuildings().begin(), world.getBuildings().end(), findNearestEnemy);
+
+	if (m_state.m_nextMinionRespawnTick - world.getTickIndex() < 100)
+		std::for_each(m_state.m_enemySpawnPredictions.begin(),m_state.m_enemySpawnPredictions.end(), findNearestEnemy);
+
+	bool isAlreadySafe = enemy == nullptr || enemy->getDistanceTo(self) > m_strategy.getSafeDistance(*enemy);
+	if (isAlreadySafe)
+		return true;  // don't retreat too far, except getting a bonus
+
+	if (!m_state.m_isHastened && m_state.isReadyForAction(model::ACTION_HASTE) && self.getLife() != self.getMaxLife())
+	{
+		move.setAction(model::ACTION_HASTE);
+		move.setStatusTargetId(getTeammateIdToHelp());
+	}
 
 	Point2D previousWaypoint = getPreviousWaypoint();
+	
+	bool aimForward = !m_state.m_dangerousEnemies.empty();
 	return goTo(previousWaypoint, move, aimForward);
 }
 
@@ -214,7 +253,7 @@ bool NavigationManager::goTo(const Point2D& point, model::Move& move, bool prese
 		{
 			// TODO - don't burl all mana for haste?
 			move.setAction(model::ACTION_HASTE);
-			move.setStatusTargetId(self.getId());
+			move.setStatusTargetId(getTeammateIdToHelp());
 		}
 	}
 	else
@@ -417,5 +456,18 @@ Point2D NavigationManager::getPreviousWaypoint()
 	}
 
 	return m_waypoints[0];
+}
+
+long long NavigationManager::getTeammateIdToHelp() const
+{
+	const auto& self = m_state.m_self;
+
+	auto teammatesAround = filterPointers<const model::Wizard*>(
+		[&self](const model::Wizard& w) { return w.getFaction() == self.getFaction() && self.getDistanceTo(w) < self.getCastRange(); },
+		m_state.m_world.getWizards());
+
+	std::sort(teammatesAround.begin(), teammatesAround.end(), [](const auto* a, const auto* b) {return a->getLife() < b->getLife(); });
+
+	return teammatesAround.empty() ? self.getId() : teammatesAround.front()->getId();
 }
 
