@@ -64,7 +64,7 @@ Map::PointPath NavigationManager::getSmoothPathTo(const Point2D& point, PathFind
 
 bool NavigationManager::stageAvoidProjectiles(model::Move& move)
 {
-	if (!m_state.m_dangerousProjectiles.empty())
+	if (m_state.m_dangerousProjectiles.empty())
 		return false;
 
 	return false;
@@ -91,7 +91,7 @@ bool NavigationManager::stageAvoidProjectiles(model::Move& move)
 			double walkbackSize = projectileInfo.m_flightDistance + strafeSize - projectileInfo.m_detectionPoint.getDistanceTo(*projectile) + self.getRadius()/*todo gap?*/;
 
 			Vec2d avoidanceVector1 = arriveDirection.ortho() * strafeSize;
-			Vec2d avoidanceVector2 = avoidanceVector1 * (-1) * strafeSize;
+			Vec2d avoidanceVector2 = avoidanceVector1 * (-1);
 			Vec2d avoidanceBack    = arriveDirection * walkbackSize;
 
 			Point2D predictedPos1 = Point2D(self) + avoidanceVector1.toPoint<Point2D>();
@@ -130,6 +130,8 @@ bool NavigationManager::stageAvoidProjectiles(model::Move& move)
 			return goTo(predictedPos3, move, true);
 		}
 	}
+
+	return false;
 }
 
 bool NavigationManager::stagePursuit(model::Move& move)
