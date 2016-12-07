@@ -8,6 +8,7 @@
 #include "DebugVisualizer.h"
 
 #include <vector>
+#include <cmath>
 
 struct State;
 class MyStrategy;
@@ -66,5 +67,22 @@ private:
 	Point2D getPreviousWaypoint();
 
 	long long getTeammateIdToHelp() const;
+
+	struct Limits
+	{
+		double forward, backward, strafe;
+
+		void increaseBy(double factor)
+		{
+			forward += forward * factor;
+			backward += backward * factor;
+			strafe += strafe * factor;
+		}
+
+		double hypot(bool isForward) const { return std::hypot((isForward ? forward : backward), strafe); }
+	};
+
+	Limits getMaxSpeed(const model::Wizard* wizard);
+
 };
 

@@ -276,15 +276,21 @@ bool NavigationManager::goTo(const Point2D& point, model::Move& move, bool prese
 	if (!preserveAngle && !m_forcePreserveAngle)
 		move.setTurn(angle);
 
+	double cos = std::cos(angle);
+	double sin = std::sin(angle);
+	bool isForward = cos >= 0.0;
+
 	const model::Game& game = m_state.m_game;
-	double forwardSpeed = game.getWizardForwardSpeed();  // TODO - haste skills and status
-	if (m_state.m_isHastened)
-		forwardSpeed += forwardSpeed * game.getHastenedMovementBonusFactor();
+	Limits speedLimit = getMaxSpeed(&self);
+	double hypotSpeed = speedLimit.hypot(isForward);
 
 	if (forwardSpeed > distanceTo && !m_isRetreating)
 		forwardSpeed = distanceTo;
 
-	Vec2d moveVector = Vec2d(forwardSpeed * std::cos(angle), forwardSpeed * std::sin(angle));
+
+	Vec2d moveVector = Vec2d(speedLimit.forward * cos, forwardSpeed * sin);
+	moveVector.truncate(speedLimit.hypot(isForward));
+
 	moveVector = getAlternateMoveVector(moveVector);
 	move.setSpeed(moveVector.m_x);
 	move.setStrafeSpeed(moveVector.m_y);
@@ -471,3 +477,38 @@ long long NavigationManager::getTeammateIdToHelp() const
 	return teammatesAround.empty() ? self.getId() : teammatesAround.front()->getId();
 }
 
+NavigationManager::Limits NavigationManager::getMaxSpeed(const model::Wizard* wizard)
+{
+	const model::Game& game   = m_state.m_game;
+
+	Limits limits;
+	limits.forward  = game.getWizardForwardSpeed();
+	limits.backward = -game.getWizardBackwardSpeed();
+	limits.strafe   = game.getWizardStrafeSpeed();
+
+	int learnedSkills = std::count_if(m_state.m_learnedSkills.begin(), m_state.m_learnedSkills.end(),
+		[](const model::SkillType& s) { return s == model::SKILL_MOVEMENT_BONUS_FACTOR_PASSIVE_1 || s == model::SKILL_MOVEMENT_BONUS_FACTOR_PASSIVE_2
+		|| s == model::SKILL_MOVEMENT_BONUS_FACTOR_AURA_1 || s == s == model::SKILL_MOVEMENT_BONUS_FACTOR_AURA_2; });
+
+	auto nearTeammates = filterPointers<const model::Wizard*>(
+		[this, wizard, &game](const model::Wizard& w) {return w.getFaction() == wizard->getFaction() && wizard->getDistanceTo(w) < game.getAuraSkillRange(); },
+		m_state.m_world.getWizards());
+
+	bool hasAura1 = false, hasAura2 = false;
+	for (const auto* teammate : nearTeammates)
+	{
+		const std::vector<model::SkillType>& auras = teammate->getSkills;
+		hasAura1 = hasAura1 || auras.end() != std::find(auras.begin(), auras.end(), model::SKILL_MOVEMENT_BONUS_FACTOR_AURA_1);
+		hasAura2 = hasAura2 || auras.end() != std::find(auras.begin(), auras.end(), model::SKILL_MOVEMENT_BONUS_FACTOR_AURA_2);
+	}
+
+	int  aurasCount = (hasAura1 ? 1 : 0) + (hasAura2 ? 1 : 0);
+	bool isHastened = m_state.m_isHastened;
+
+	double factor = 1 + learnedSkills * game.getMovementBonusFactorPerSkillLevel()
+	                  + aurasCount * game.getMovementBonusFactorPerSkillLevel()
+	                  + (isHastened ? game.getHastenedMovementBonusFactor() : 0);
+
+	limits.increaseBy(factor);
+	return limits;
+}
