@@ -183,6 +183,11 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 		m_navigation->pursuitEnemy(nearestTarget);
 	}
 
+	std::vector<const model::Tree*> treesBetween = filterPointers<const model::Tree*>([&self, &game, nearestTarget](const model::Tree& t)
+	{
+		return Map::isSectionIntersects(self, *nearestTarget, t, t.getRadius() + game.getFrostBoltRadius());
+	}, m_state->m_world.getTrees());
+
 	// TODO - more accurate mana regeneration
 	const double damageMm = m_state->m_game.getMagicMissileDirectDamage();
 	const double damageFB = m_state->m_game.getFrostBoltDirectDamage();
@@ -197,7 +202,7 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 	auto targetWizard = getWizard(nearestTarget);
 	bool canTakedownWithFBMM = nearestTarget->getLife() > damageMm && nearestTarget->getLife() < (damageFB + damageMm);
 
-	bool shouldShootLastFB = isLastFrostBolt && !isPredictionMode &&
+	bool shouldShootLastFB = isLastFrostBolt && !isPredictionMode && treesBetween.empty() &&
 		(isRetreating
 			|| (targetMinion != nullptr && targetMinion->getType() == model::MINION_FETISH_BLOWDART && canTakedownWithFBMM)
 			|| (targetWizard != nullptr && canTakedownWithFBMM)
@@ -259,7 +264,7 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 		move.setCastAngle(angle);
 		move.setMinCastDistance(distance - nearestTarget->getRadius() + game.getFrostBoltRadius());
 	}
-	else if (m_state->isReadyForAction(ACTION_FROST_BOLT) && !isLastFrostBolt && !isPredictionMode)
+	else if (m_state->isReadyForAction(ACTION_FROST_BOLT) && !isLastFrostBolt && !isPredictionMode && treesBetween.empty())
 	{
 		if (abs(angle) < shootingAngle)
 		{
