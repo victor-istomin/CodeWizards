@@ -358,6 +358,12 @@ void NavigationManager::applySpeedLimit(Vec2d &moveVector, const Limits& speedLi
 	{
 		moveVector /= std::abs(moveVector.m_y) / speedLimit.strafe + 0.001;
 	}
+
+	auto pow2 = [](double a) { return a*a; };
+	int xLimit = moveVector.m_x < 0 ? speedLimit.backward : speedLimit.forward;
+	double pairLimit = std::sqrt(pow2(moveVector.m_x / xLimit) + pow2(moveVector.m_y / speedLimit.strafe));
+	if (pairLimit > 1)
+		moveVector /= pairLimit;
 }
 
 bool NavigationManager::isPathAcceptable(const Vec2d& moveVector, const Map::PointPath& smoothPath)
