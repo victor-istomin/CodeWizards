@@ -292,18 +292,22 @@ bool NavigationManager::goTo(const Point2D& point, model::Move& move, bool prese
 	moveVector = getAlternateMoveVector(moveVector);
 	applySpeedLimit(moveVector, speedLimit);
 
-	move.setSpeed(moveVector.m_x);
-	move.setStrafeSpeed(moveVector.m_y);
-
-	if (m_state.isGotStuck())
+	bool isAcceptable = isPathAcceptable(moveVector, smoothPath);
+	if (isAcceptable)
 	{
-		// try freeing oneself
-		move.setStrafeSpeed((rand() % 2 == 0 ? -1 : 1) * game.getWizardStrafeSpeed());
-		if (rand() % 2 == 0)
-			move.setSpeed(0.1);
+		move.setSpeed(moveVector.m_x);
+		move.setStrafeSpeed(moveVector.m_y);
+
+		if (m_state.isGotStuck())
+		{
+			// try freeing oneself
+			move.setStrafeSpeed((rand() % 2 == 0 ? -1 : 1) * game.getWizardStrafeSpeed());
+			if (rand() % 2 == 0)
+				move.setSpeed(0.1);
+		}
 	}
 
-	return isPathAcceptable(moveVector, smoothPath);
+	return isAcceptable;
 }
 
 
