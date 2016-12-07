@@ -148,12 +148,19 @@ void State::updateProjectiles()
 	for (const model::Projectile& newProjectile : projectiles)
 	{
 		auto foundIt = std::find(m_projectileInfos.begin(), m_projectileInfos.end(), newProjectile);
-		if (foundIt == m_projectileInfos.end() && newProjectile.getType() != model::PROJECTILE_DART)
+		if (foundIt == m_projectileInfos.end() && newProjectile.getType() != model::PROJECTILE_DART)  // don't track dart - it's too fast
 		{
-			m_projectileInfos.emplace_back(newProjectile, m_world.getTickIndex());
+			m_projectileInfos.emplace_back(newProjectile, m_world.getTickIndex(), m_game.getWizardCastRange());
 			const model::Wizard* owner = getUnit<model::Wizard>(newProjectile.getOwnerUnitId());
 			if (owner != nullptr)
-				m_projectileInfos.back().m_detectionPoint = *owner;
+			{
+				Projectiles::reference projectileInfo = m_projectileInfos.back();
+				Vec2d direction = Vec2d(projectileInfo.m_speed).normalize();
+
+				projectileInfo.m_detectionPoint = *owner;
+				projectileInfo.m_flightDistance = owner->getCastRange();
+				projectileInfo.m_flightFinish   = projectileInfo.m_detectionPoint + (direction * projectileInfo.m_flightDistance).toPoint<Point2D>();
+			}
 		}
 	}
 
@@ -170,12 +177,10 @@ void State::updateProjectiles()
 
 		const model::Projectile* projectile = getUnit<model::Projectile>(projectileInfo.m_id);
 
-		// TODO - more accurate flight distance prediction?
-		// e.g. we could track max projectile distance for each unit
-		double  flightDistance = m_game.getWizardCastRange();
-		Point2D flightFinish = projectileInfo.m_detectionPoint + (direction * flightDistance).toPoint<Point2D>();
-
-		auto mightHit = [&projectile, flightFinish, this](const model::LivingUnit* unit)
+		projectileInfo.m_flightFinish = projectileInfo.m_detectionPoint + (direction * projectileInfo.m_flightDistance).toPoint<Point2D>();
+		
+		const auto& flightFinish = projectileInfo.m_flightFinish;
+		auto mightHit = [&projectile, &flightFinish, this](const model::LivingUnit* unit)
 		{
 			return Map::isSectionIntersects(*projectile, flightFinish, *unit, unit->getRadius() + projectile->getRadius())
 				&& (MyStrategy::getTree(unit) != nullptr || unit->getFaction() != projectile->getFaction());

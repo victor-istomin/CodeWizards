@@ -49,6 +49,7 @@ private:
 	bool               m_isInCombat;
 
 
+	bool stageAvoidProjectiles(model::Move& move);
 	bool stagePursuit(model::Move& move);  // try pursuit enemy
 	bool stageBonus(model::Move& move);    // try getting bonus
 	bool stageRetreat(model::Move& move);  // try retreat if needed

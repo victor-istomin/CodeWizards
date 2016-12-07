@@ -24,15 +24,23 @@ struct StorableState
 		model::Faction m_faction;
 		int            m_detectionTick;
 		Point2D        m_detectionPoint;
+		Point2D        m_flightFinish;
 		double         m_radius;
+		double         m_flightDistance;
 		Vec2d          m_speed;
 		Ids            m_possibleTargets;
 
-		ProjectileInfo(const model::Projectile& p, int tick)
+		ProjectileInfo(const model::Projectile& p, int tick, double flightDistance)
 			: m_id(p.getId()), m_ownerUnitId(p.getOwnerUnitId()), m_faction(p.getFaction())
-			, m_detectionTick(tick), m_detectionPoint(p), m_radius(p.getRadius()), m_speed(p.getSpeedX(), p.getSpeedY()) 
+			, m_detectionTick(tick), m_detectionPoint(p), m_flightFinish(-1, -1)
+			, m_radius(p.getRadius()), m_flightDistance(flightDistance), m_speed(p.getSpeedX(), p.getSpeedY())
 			, m_possibleTargets()
-		{}
+		{
+			Vec2d maxFlight = m_speed;
+			maxFlight.truncate(m_flightDistance);
+
+			m_flightFinish = m_detectionPoint + maxFlight.toPoint<Point2D>();
+		}
 
 		friend bool operator==(const ProjectileInfo& a, const model::Projectile& b);
 		friend bool operator==(const model::Projectile& a, const ProjectileInfo& b);

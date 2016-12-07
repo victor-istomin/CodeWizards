@@ -32,6 +32,7 @@ void NavigationManager::makeMove(model::Move& move)
 	using StageFunc = decltype(&NavigationManager::stagePursuit);
 	StageFunc stages[] = 
 	{ 
+		&NavigationManager::stageAvoidProjectiles,
 		&NavigationManager::stagePursuit,
 		&NavigationManager::stageBonus,
 		&NavigationManager::stageRetreat,    // 'stageBonus' placed before because it's responsible of retreating to bonus
@@ -58,6 +59,38 @@ Map::PointPath NavigationManager::getSmoothPathTo(const Point2D& point, PathFind
 		smoothPath.pop_front();
 
 	return smoothPath;
+}
+
+
+bool NavigationManager::stageAvoidProjectiles(model::Move& move)
+{
+	if (!m_state.m_dangerousProjectiles.empty())
+		return false;
+
+	return false;
+// 	const auto& self = m_state.m_self;
+// 	Limits speedLimit = getMaxSpeed(&self);
+// 
+// 	for (const StorableState::ProjectileInfo& projectileInfo : m_state.m_dangerousProjectiles)
+// 	{
+// 		const model::Projectile* projectile = m_state.getUnit<model::Projectile>(projectileInfo.m_id);
+// 		double distance = self.getDistanceTo(*projectile);
+// 		double eta = distance / projectileInfo.m_speed.length();
+// 
+// 		// some missiles may be avoided by walking back
+// 		double 
+// 
+// // 		double possibleDisposition = eta * speedLimit.hypot(false/*backward*/);
+// // 		if (possibleDisposition >= self.getRadius())
+// // 		{
+// // 			// try avoid missile
+// // 			Vec2d arriveDirection = projectileInfo.m_speed;
+// // 			arriveDirection.normalize();
+// // 
+// // 			Vec2d avoidanceVector1 = arriveDirection.ortho();
+// // 		}
+// 
+// 	}
 }
 
 bool NavigationManager::stagePursuit(model::Move& move)
