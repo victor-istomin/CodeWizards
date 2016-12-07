@@ -68,29 +68,68 @@ bool NavigationManager::stageAvoidProjectiles(model::Move& move)
 		return false;
 
 	return false;
-// 	const auto& self = m_state.m_self;
-// 	Limits speedLimit = getMaxSpeed(&self);
+	const auto& self = m_state.m_self;
+	Limits speedLimit = getMaxSpeed(&self);
+
+	for (const StorableState::ProjectileInfo& projectileInfo : m_state.m_dangerousProjectiles)
+	{
+		const model::Projectile* projectile = m_state.getUnit<model::Projectile>(projectileInfo.m_id);
+		double distance = self.getDistanceTo(*projectile);
+		double eta = distance / projectileInfo.m_speed.length();
+
+		// TODO: some missiles may be avoided by just walking back
+//		double possibleBackStep
 // 
-// 	for (const StorableState::ProjectileInfo& projectileInfo : m_state.m_dangerousProjectiles)
-// 	{
-// 		const model::Projectile* projectile = m_state.getUnit<model::Projectile>(projectileInfo.m_id);
-// 		double distance = self.getDistanceTo(*projectile);
-// 		double eta = distance / projectileInfo.m_speed.length();
-// 
-// 		// some missiles may be avoided by walking back
-// 		double 
-// 
-// // 		double possibleDisposition = eta * speedLimit.hypot(false/*backward*/);
-// // 		if (possibleDisposition >= self.getRadius())
-// // 		{
-// // 			// try avoid missile
-// // 			Vec2d arriveDirection = projectileInfo.m_speed;
-// // 			arriveDirection.normalize();
-// // 
-// // 			Vec2d avoidanceVector1 = arriveDirection.ortho();
-// // 		}
-// 
-// 	}
+		double possibleDisposition = eta * speedLimit.hypot(false/*backward*/);
+		if (possibleDisposition >= self.getRadius())
+		{
+			// try avoid missile
+			Vec2d arriveDirection = projectileInfo.m_speed;
+			arriveDirection.normalize();
+
+			double strafeSize   = (self.getRadius() + 1);
+			double walkbackSize = projectileInfo.m_flightDistance + strafeSize - projectileInfo.m_detectionPoint.getDistanceTo(*projectile) + self.getRadius()/*todo gap?*/;
+
+			Vec2d avoidanceVector1 = arriveDirection.ortho() * strafeSize;
+			Vec2d avoidanceVector2 = avoidanceVector1 * (-1) * strafeSize;
+			Vec2d avoidanceBack    = arriveDirection * walkbackSize;
+
+			Point2D predictedPos1 = Point2D(self) + avoidanceVector1.toPoint<Point2D>();
+			Point2D predictedPos2 = Point2D(self) + avoidanceVector2.toPoint<Point2D>();
+			Point2D predictedPos3 = Point2D(self) + avoidanceVector2.toPoint<Point2D>();
+
+			auto isMoveIntersects = [&self](const Point2D& to, const model::CircularUnit& unit)
+			{
+				return Map::isSectionIntersects(self, to, unit, self.getRadius() + unit.getRadius());
+			};
+
+			const model::World& world = m_state.m_world;
+			const double LOOKUP_DISTANCE = self.getRadius() * 4;
+			auto obstacles = filterPointers<const model::CircularUnit*>(
+				[&self, LOOKUP_DISTANCE](const model::CircularUnit& unit) {return self.getDistanceTo(unit) < LOOKUP_DISTANCE; },
+				world.getWizards(), world.getMinions(), world.getTrees(), world.getBuildings());
+
+			bool isFirstOk  = true;
+			bool isSecondOk = true;
+			for (const model::CircularUnit* obstacle : obstacles)
+			{
+				isFirstOk  = isFirstOk  && !isMoveIntersects(predictedPos1, *obstacle);
+				isSecondOk = isSecondOk && !isMoveIntersects(predictedPos2, *obstacle);
+			}
+
+			if (isFirstOk)
+			{
+				return goTo(predictedPos1, move, true);
+			}
+			else if (isSecondOk)
+			{
+				return goTo(predictedPos2, move, true);
+			}
+
+			// TODO - force haste flag in goto!
+			return goTo(predictedPos3, move, true);
+		}
+	}
 }
 
 bool NavigationManager::stagePursuit(model::Move& move)
