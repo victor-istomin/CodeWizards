@@ -121,6 +121,7 @@ struct State
 	int nextBonusSpawnTick() const { return lastBonusSpawnTick() + m_game.getBonusAppearanceIntervalTicks(); }
 
 	void updateDangerousEnemies();
+	LivingUnits getDangerousEnemiesFor(const Point2D& selfPoint) const;
 
 	bool isReadyForAction(model::ActionType action) const              { return m_cooldownTicks[action] == 0; }
 	bool isUnderMissile() const                                        { return !m_dangerousProjectiles.empty(); }

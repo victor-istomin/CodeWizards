@@ -86,16 +86,7 @@ private:
 	double getPathLength(const Map::PointPath& path) const;
 
 	void tryDisengage(model::Move &move);
-
-
-	double getMaxDamage(const model::Unit* u) const;
-	template <typename UnitType> double getMaxDamage(const UnitType& u) const      { return u.getDamage(); }
-	// also, there is a specialization out of class scope
-
 	void learnSkill(model::Move& move);
-
-// 	struct SpeedLimits 
-// 	void getWizardMaxSpeed();
 
 public:
     MyStrategy();
@@ -106,6 +97,11 @@ public:
 	bool considerAttack (model::Move &move, bool isRetreating, DebugMessage& debugMessage);
 
 	double getSafeDistance(const model::Unit& enemy) const;
+
+	double getMaxDamage(const model::Unit* u) const;
+	template <typename UnitType> double getMaxDamage(const UnitType& u) const { return u.getDamage(); }
+	// also, there is a specialization out of class scope
+
 
 	MapsManager& getMaps() const { return *m_maps; }
 

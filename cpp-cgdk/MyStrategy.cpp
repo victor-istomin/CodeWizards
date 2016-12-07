@@ -96,7 +96,7 @@ bool MyStrategy::considerRetreat(Move& move, DebugMessage& debugMessage)
 	bool isNearOrk = dangerousEnemies.end() != std::find_if(dangerousEnemies.begin(), dangerousEnemies.end(),
 		[this](const Unit* u) { return getMinion(u) != nullptr && getMinion(u)->getType() == model::MINION_ORC_WOODCUTTER; });
 
-	bool isTooCloseToEnemy = isNearOrk || self.getLife() < totalEnemiesDamage;
+	bool isTooCloseToEnemy = isNearOrk || m_state->m_estimatedHP < totalEnemiesDamage;
 	if (m_state->m_estimatedHP < totalEnemiesDamage)
 	{
 		m_state->m_isLowHP = true;  // this also activates "don't retreat too far" feature
@@ -108,6 +108,7 @@ bool MyStrategy::considerRetreat(Move& move, DebugMessage& debugMessage)
 	bool isEnemyRushing = relativeEnemiesAmount >= 2.0 && around.enemyWizards != 0;  // TODO - take teammate towers into account?
 
 	bool isRetreating = isTooCloseToEnemy || m_state->m_isLowHP || isEnemyRushing;
+
 	m_navigation->setRetreatMode(isRetreating);
 
 	return isRetreating;

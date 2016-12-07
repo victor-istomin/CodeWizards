@@ -6,6 +6,9 @@
 
 #include "model/ActionType.h"
 
+#include <algorithm>
+#include <numeric>
+
 NavigationManager::NavigationManager(const MyStrategy& strategy, const State& state, const Waypoints& waypoints, const Point2D& guardPoint, PathFinder& pathFinder,
                                      DebugMessage& debugMessage)
 	: m_strategy(strategy)
@@ -188,10 +191,7 @@ bool NavigationManager::stagePushLine(model::Move& move)
 
 	// don't push too early
 	const int prepareTicks = m_state.m_game.getFactionMinionAppearanceIntervalTicks()
-		/* debug code*/
-		+ 0; 
-		/* debug code end, uncomment below*/
-	//+ (m_guardPoint.getDistanceTo(MyStrategy::MID_GUARD_POINT) < Point2D::k_epsilon ? 200 : 100);
+		+ (m_guardPoint.getDistanceTo(MyStrategy::MID_GUARD_POINT) < Point2D::k_epsilon ? 200 : 0);
 
 	Point2D currentWaypoint = m_waypoints[GetCurrentWaypointIndex()];
 	bool    isPushTime      = m_state.m_world.getTickIndex() > prepareTicks;
@@ -325,6 +325,19 @@ void NavigationManager::applySpeedLimit(Vec2d &moveVector, const Limits& speedLi
 
 bool NavigationManager::isPathAcceptable(const Vec2d& moveVector, const Map::PointPath& smoothPath)
 {
+	if (m_isRetreating)
+		return true;     // retreating validation is not yet implemented
+
+	Point2D newPosition   = Point2D(m_state.m_self) + moveVector.toPoint<Point2D>();
+
+	// avoid towers and enemy groups with low HP
+	auto dangerousEnemies = m_state.getDangerousEnemiesFor(newPosition);
+	double totalEnemiesDamage = std::accumulate(dangerousEnemies.begin(), dangerousEnemies.end(), 0.0, 
+		[this](double sum, const model::Unit* enemy) {return sum + m_strategy.getMaxDamage(enemy); });
+
+	if (totalEnemiesDamage > m_state.m_estimatedHP)
+		return false;
+
 	return true; // TODO: don't step into missile, etc.
 }
 
