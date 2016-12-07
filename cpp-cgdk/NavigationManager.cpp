@@ -382,9 +382,18 @@ Vec2d NavigationManager::getAlternateMoveVector(const Vec2d& suggestion)
 			return false;
 		}
 
-		return obstacles.end() == std::find_if(obstacles.begin(), obstacles.end(), [&worldVector, &self](const model::CircularUnit* obstacle)
+		Point2D wordPosition = worldVector.toPoint<Point2D>();
+		return obstacles.end() == std::find_if(obstacles.begin(), obstacles.end(), [&wordPosition, &self](const model::CircularUnit* obstacle)
 		{
-			return Map::isSectionIntersects(self, worldVector.toPoint<Point2D>(), *obstacle, obstacle->getRadius() + self.getRadius());
+			double radius = obstacle->getRadius() + self.getRadius();
+			if (Map::isSectionIntersects(self, wordPosition, *obstacle, radius))
+				return true;
+
+			Point2D futureObstacle = Point2D(*obstacle) + Point2D(obstacle->getSpeedX(), obstacle->getSpeedY());
+			if (Map::isSectionIntersects(self, wordPosition, futureObstacle, radius))
+				return true;
+
+			return false;
 		});
 	};
 
