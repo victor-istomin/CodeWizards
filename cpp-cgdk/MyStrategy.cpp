@@ -185,7 +185,9 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 
 	std::vector<const model::Tree*> treesBetween = filterPointers<const model::Tree*>([&self, &game, nearestTarget](const model::Tree& t)
 	{
-		return Map::isSectionIntersects(self, *nearestTarget, t, t.getRadius() + game.getFrostBoltRadius());
+		return self.getDistanceTo(t) < self.getDistanceTo(*nearestTarget)
+		    && Map::isSectionIntersects(self, *nearestTarget, t, t.getRadius() + game.getFrostBoltRadius());
+
 	}, m_state->m_world.getTrees());
 
 	// TODO - more accurate mana regeneration
