@@ -35,6 +35,7 @@ class DebugVisualizer;
 class DebugMessage;
 class PathFinder;
 class MapsManager;
+class NavigationManager;
 
 class MyStrategy : public Strategy 
 {
@@ -43,26 +44,25 @@ public:
 	typedef std::map<model::LaneType, TWaypoints> TWaypointsMap;
 
 	static const std::vector<model::SkillType> SKILLS_TO_LEARN;
+
 	static const double WAYPOINT_RADIUS;
-
-private:
-
-	static const int    STRAFE_CHANGE_INTERVAL = 4; // don't change strafe too often
-
 	static Point2D      TOP_GUARD_POINT;
 	static Point2D      MID_GUARD_POINT;
 	static Point2D      BOTTOM_GUARD_POINT;
+
+private:
 
 	static Point2D      BONUS_POINTS[];
 
 	static TWaypointsMap g_waypointsMap;
 
-	std::unique_ptr<DebugVisualizer> m_visualizer;
-	std::unique_ptr<State>           m_state;
-	StorableState                    m_oldState;
-	std::unique_ptr<MapsManager>     m_maps;
-	std::unique_ptr<PathFinder>      m_pathFinder;
-	std::unique_ptr<Point2D>         m_spawnPoint;
+	std::unique_ptr<DebugVisualizer>   m_visualizer;
+	std::unique_ptr<State>             m_state;
+	StorableState                      m_oldState;
+	std::unique_ptr<MapsManager>       m_maps;
+	std::unique_ptr<PathFinder>        m_pathFinder;
+	std::unique_ptr<Point2D>           m_spawnPoint;
+	std::unique_ptr<NavigationManager> m_navigation;
 
 	TWaypoints m_waypoints;
 	int        m_currentWaypointIndex;
@@ -73,19 +73,16 @@ private:
 	Point2D* m_guardPoint;
 
 	void initialSetup();
-	void initState(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move);
+	void initState(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, DebugMessage& debugMessage);
 
-	Point2D getNextWaypoint();
-	Point2D getPreviousWaypoint();
 
 	const model::LivingUnit* getNearestTarget();
 	const BonusSpawn* getReasonableBonus();
 
 	// actions
-	void goTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage);
-	void retreatTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage);
+// 	void goTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage);
+// 	void retreatTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage);
 
-	Map::PointPath getSmoothPathTo(const Point2D& point, const Map* map, PathFinder::TilesPath& tiles);
 	double getPathLength(const Map::PointPath& path) const;
 
 	void tryDisengage(model::Move &move);
@@ -94,8 +91,6 @@ private:
 	double getMaxDamage(const model::Unit* u) const;
 	template <typename UnitType> double getMaxDamage(const UnitType& u) const      { return u.getDamage(); }
 	// also, there is a specialization out of class scope
-
-	Vec2d getAlternateMoveVector(const Vec2d& suggestion);
 
 	void learnSkill(model::Move& move);
 
@@ -111,6 +106,8 @@ public:
 	bool considerAttack (model::Move &move, bool isRetreating, DebugMessage& debugMessage);
 
 	double getSafeDistance(const model::Unit& enemy) const;
+
+	MapsManager& getMaps() const { return *m_maps; }
 
 	static auto getWizard(const model::Unit* unit)    { return dynamic_cast<const model::Wizard*>(unit); }
 	static auto getMinion(const model::Unit* unit)    { return dynamic_cast<const model::Minion*>(unit); }

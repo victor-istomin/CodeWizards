@@ -6,6 +6,7 @@
 #include "PathFinder.h"
 #include "MapsManager.h"
 #include "State.h"
+#include "NavigationManager.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -53,9 +54,9 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 {
 	Timer timer(__FUNCTION__, world.getMyPlayer().getName(), self.getOwnerPlayerId());
 
-	initState(self, world, game, move);
-	State::HistoryWriter updater(*m_state, m_oldState);
 	DebugMessage debugMessage(*m_visualizer, self, world);
+	initState(self, world, game, move, debugMessage);
+	State::HistoryWriter updater(*m_state, m_oldState);
 	debugMessage.visualizePredictions(m_state->m_enemySpawnPredictions);
 
 	learnSkill(move);
@@ -74,38 +75,8 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 
 	bool isRetreating = considerRetreat(move, debugMessage);
 
-	if (considerAttack(move, isRetreating, debugMessage))
-		return;
-
-	// Если нет других действий, просто продвигаемся вперёд.
-	if (move.getSpeed() < Point2D::k_epsilon && (std::abs(move.getTurn()) < PI/1000) && !isRetreating)
-	{
-		Point2D nextWaypoint = getNextWaypoint();
-
-		if (m_reasonableBonus)
-			nextWaypoint = m_reasonableBonus->m_point;
-
-		// don't push too early
-		const int prepareTicks = m_state->m_game.getFactionMinionAppearanceIntervalTicks()
-			+ (m_guardPoint->getDistanceTo(MID_GUARD_POINT) < Point2D::k_epsilon ? 200 : 100);
-
-		bool isRushTime = (m_state->m_world.getTickIndex() > prepareTicks);
-		if (!isRushTime && m_guardPoint->getDistanceTo(self) < WAYPOINT_RADIUS)
-			nextWaypoint = *m_guardPoint;
-
-		if (nextWaypoint.getDistanceTo(self) > self.getRadius())
-		{
-			goTo(nextWaypoint, move, debugMessage);
-		}
-		else
-		{
-			nextWaypoint = getNextWaypoint(); 
-			double angle = m_state->m_self.getAngleTo(nextWaypoint.m_x, nextWaypoint.m_y);
-
-			// turn, but not move
-			move.setTurn(angle);
-		}
-	}
+	considerAttack(move, isRetreating, debugMessage);
+	m_navigation->makeMove(move);
 }
 
 bool MyStrategy::considerRetreat(Move& move, DebugMessage& debugMessage)
@@ -131,37 +102,8 @@ bool MyStrategy::considerRetreat(Move& move, DebugMessage& debugMessage)
 	const double rushHpThreshold = around.teammateMinions != 0 ? 3.0 : 2.0;
 	bool isEnemyRushing = relativeEnemiesAmount >= 2.0 && around.enemyWizards != 0;  // TODO - take teammate towers into account?
 
-	// Если осталось мало жизненной энергии, отступаем к предыдущей ключевой точке на линии.
 	bool isRetreating = isTooCloseToEnemy || m_state->m_isLowHP || isEnemyRushing;
-	if (isRetreating)
-	{
-		// TODO - consider retreating to most safe point both in case of bonus or not bonus
-
-		Point2D previousWaypoint = getPreviousWaypoint();
-		if (m_reasonableBonus)
-		{
-			bool canGet = !m_state->m_isLowHP;
-			if (m_state->m_isLowHP)
-			{
-				const Point2D& nextPathPoint = m_reasonableBonus->m_smoothPathCache.empty() ? m_reasonableBonus->m_point : m_reasonableBonus->m_smoothPathCache.front();
-				auto enemies = filterPointers<const model::Unit*>([this, &self](const model::Unit& u) {return isEnemy(u, self); }, world.getBuildings(), world.getWizards(), world.getMinions());
-
-				bool noEnemiesThatWay = enemies.end() == std::find_if(enemies.begin(), enemies.end(),
-					[&nextPathPoint, &self](const model::Unit* enemy)
-				{
-					return std::abs(self.getAngleTo(*enemy) - self.getAngleTo(nextPathPoint.m_x, nextPathPoint.m_y)) > (PI / 2);
-				});
-
-				canGet = noEnemiesThatWay;
-			}
-
-			if (canGet)
-				previousWaypoint = m_reasonableBonus->m_point;
-		}
-
-		retreatTo(previousWaypoint, move, debugMessage);
-		debugMessage.setNextWaypoint(previousWaypoint);
-	}
+	m_navigation->setRetreatMode(isRetreating);
 
 	return isRetreating;
 }
@@ -178,27 +120,63 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 	
 	double distance = self.getDistanceTo(*nearestTarget);
 	const double shootingDistance = self.getCastRange();
-	if (distance > shootingDistance)
+
+	int roughTickToHit = 14;
+	double preAimDistance = shootingDistance + nearestTarget->getRadius() + game.getWizardForwardSpeed() * roughTickToHit;
+
+	if (distance > preAimDistance)
 		return false;
 
-	double angle = self.getAngleTo(*nearestTarget);
-	move.setTurn(angle);
-
-	bool isWizard = getWizard(nearestTarget) != nullptr;
-	if (isWizard && !isRetreating)
+	bool isPredictionMode = false;
+	Point2D predictionPoint = *nearestTarget;
+	if (distance > shootingDistance)
 	{
-		// might escape. This is workaround
-		double enenyAngle = nearestTarget->getAngleTo(self);
-		if (std::abs(enenyAngle) > game.getStaffSector())
-		{
-			double ticksToTurn = 1 + (std::abs(enenyAngle) - game.getStaffSector()) / game.getWizardMaxTurnAngle();
-			double desiredDistance = shootingDistance - ticksToTurn * game.getWizardStrafeSpeed();
+		isPredictionMode = true;
+		Point2D speed{ nearestTarget->getSpeedX(), nearestTarget->getSpeedY() };
+		predictionPoint = Point2D(*nearestTarget) + speed;
 
-			if (self.getDistanceTo(*nearestTarget) > desiredDistance)
+		distance = predictionPoint.getDistanceTo(self);
+		int tickToHit   = std::max(1, static_cast<int>(distance / game.getMagicMissileSpeed()));
+		int ticksToTurn = std::abs(static_cast<int>(m_state->m_self.getAngleTo(*nearestTarget) / game.getWizardMaxTurnAngle()));  // TODO - hastened?
+
+		int ticksToPredict = isRetreating ? tickToHit * 2 / 3 : tickToHit / 2;
+
+		if (distance > shootingDistance && m_state->m_cooldownTicks[model::ACTION_MAGIC_MISSILE] <= ticksToTurn)
+		{
+			for (int i = 0; i < ticksToPredict; ++i)
 			{
-				goTo(*nearestTarget, move, debugMessage);
+				predictionPoint = predictionPoint + speed;
+				distance = predictionPoint.getDistanceTo(self);
+				if (distance < shootingDistance)
+				{
+					break;
+				}
 			}
 		}
+
+		if (distance > shootingDistance)
+		{
+			if (distance < preAimDistance)
+			{
+				move.setTurn(self.getAngleTo(predictionPoint.m_x, predictionPoint.m_y));
+				m_navigation->setForcePreserveAngle(true);
+			}
+
+			return false;
+		}
+	}
+
+	double angle = isPredictionMode ? self.getAngleTo(predictionPoint.m_x, predictionPoint.m_y) : self.getAngleTo(*nearestTarget);
+	move.setTurn(angle);
+
+	m_navigation->setForcePreserveAngle(true);
+	if (!isPredictionMode)
+		m_navigation->setInCombatMode(true);
+
+	bool isWizard = getWizard(nearestTarget) != nullptr;
+	if (isWizard)
+	{
+		m_navigation->pursuitEnemy(nearestTarget);
 	}
 
 	// TODO - more accurate mana regeneration
@@ -215,7 +193,7 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 	auto targetWizard = getWizard(nearestTarget);
 	bool canTakedownWithFBMM = nearestTarget->getLife() > damageMm && nearestTarget->getLife() < (damageFB + damageMm);
 
-	bool shouldShootLastFB = isLastFrostBolt &&
+	bool shouldShootLastFB = isLastFrostBolt && !isPredictionMode &&
 		(isRetreating
 			|| (targetMinion != nullptr && targetMinion->getType() == model::MINION_FETISH_BLOWDART && canTakedownWithFBMM)
 			|| (targetWizard != nullptr && canTakedownWithFBMM)
@@ -277,7 +255,7 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 		move.setCastAngle(angle);
 		move.setMinCastDistance(distance - nearestTarget->getRadius() + game.getFrostBoltRadius());
 	}
-	else if (m_state->isReadyForAction(ACTION_FROST_BOLT) && !isLastFrostBolt)
+	else if (m_state->isReadyForAction(ACTION_FROST_BOLT) && !isLastFrostBolt && !isPredictionMode)
 	{
 		if (abs(angle) < shootingAngle)
 		{
@@ -305,10 +283,10 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 		}
 	}
 
-	if (m_reasonableBonus)
-	{
-		retreatTo(m_reasonableBonus->m_point, move, debugMessage);
-	}
+// 	if (m_reasonableBonus)
+// 	{
+// 		retreatTo(m_reasonableBonus->m_point, move, debugMessage);
+// 	}
 
 	// 			if (m_state->isUnderMissile())
 	// 			{
@@ -426,7 +404,7 @@ void MyStrategy::initialSetup()
 	m_waypoints = g_waypointsMap[line];
 }
 
-void MyStrategy::initState(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move)
+void MyStrategy::initState(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, DebugMessage& debugMessage)
 {
 	m_state = std::make_unique<State>(this, self, world, game, move, m_oldState);
 	m_state->updateDispositionAround();
@@ -454,34 +432,9 @@ void MyStrategy::initState(const model::Wizard& self, const model::World& world,
 		m_currentWaypointIndex = 1;   // [0] waypoint is for retreating only
 	}
 
-	m_reasonableBonus = getReasonableBonus();
-}
-
-Point2D MyStrategy::getNextWaypoint()
-{
-	// assume that waypoint are sorted by-distance !!!
-
-	int lastWaypointIndex = m_waypoints.empty() ? 0 : m_waypoints.size() - 1;
-
-	Point2D currentWaypoint = m_waypoints[m_currentWaypointIndex];
-	if (currentWaypoint.getDistanceTo(m_state->m_self) < WAYPOINT_RADIUS && m_currentWaypointIndex < lastWaypointIndex)
-	{
-		currentWaypoint = m_waypoints[++m_currentWaypointIndex];
-	}
-
-	return currentWaypoint;
-}
-
-Point2D MyStrategy::getPreviousWaypoint()
-{
-	// assume that waypoint are sorted by-distance !!!
-
-	Point2D previousWaypoint = m_waypoints[std::max(0, m_currentWaypointIndex - 1)];
-
-	if (previousWaypoint.getDistanceTo(m_state->m_self) <= WAYPOINT_RADIUS && m_currentWaypointIndex > 0)
-		previousWaypoint = m_waypoints[std::max(0, (--m_currentWaypointIndex) - 1)];
-
-	return previousWaypoint;
+	m_navigation = std::make_unique<NavigationManager>(*this, *m_state, m_waypoints, *m_guardPoint, *m_pathFinder, debugMessage);
+	m_reasonableBonus = getReasonableBonus();   // TODO - remove 'm_reasonableBonus'
+	m_navigation->setBonusPoint(m_reasonableBonus);
 }
 
 const model::LivingUnit* MyStrategy::getNearestTarget()
@@ -517,7 +470,7 @@ const model::LivingUnit* MyStrategy::getNearestTarget()
 		}
 
 		double distance =  self.getDistanceTo(*target);
-		if (target->getLife() == minEnemyHealth)
+		if (target->getLife() == minEnemyHealth && distance < (self.getCastRange() + target->getRadius()))   // TODO - accurate cast range
 		{
 			distance /= 2;  // this is priority hack
 		}
@@ -553,8 +506,7 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 		if (spawn.m_point.getDistanceTo(self) > MAX_TRAVEL_DISTANCE)
 			continue;  // path can't be shorter than straight line
 
-		const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
-		spawn.m_smoothPathCache = getSmoothPathTo(spawn.m_point, map, spawn.m_tilesPathCache);
+		spawn.m_smoothPathCache = m_navigation->getSmoothPathTo(spawn.m_point, spawn.m_tilesPathCache);
 		const Point2D nextStepPoint = spawn.m_smoothPathCache.empty() ? spawn.m_point : spawn.m_smoothPathCache.front();
 
 		auto isEnemyInBetweenPredicate = [&self, &nextStepPoint](const model::LivingUnit* enemy)
@@ -593,7 +545,7 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 			const double WAIT_DISTANCE = self.getRadius() * 2.5;
 			if (distance < WAIT_DISTANCE && nearest->m_state == BonusSpawn::NO_BONUS)
 			{
-				static BonusSpawn hack = BonusSpawn(*nearest);
+				static BonusSpawn hack{ *nearest };
 				hack = *nearest;
 				hack.m_point = self;  // wait point (TODO: remove dirty hack)
 
@@ -609,160 +561,147 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 	return nullptr;
 }
 
-void MyStrategy::goTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage)
-{
-	Timer timer(__FUNCTION__);
+// void MyStrategy::goTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage)
+// {
+// 	Timer timer(__FUNCTION__);
+// 
+// 	Point2D target = point;
+// 
+// 	PathFinder::TilesPath path;
+// 	const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
+// 	Map::PointPath smoothPath; 
+// 	
+// 	if (m_reasonableBonus != nullptr && m_reasonableBonus->m_point == point)
+// 	{
+// 		smoothPath = m_reasonableBonus->m_smoothPathCache;
+// 		path = m_reasonableBonus->m_tilesPathCache;
+// 
+// 		if (!m_state->m_isHastened && m_state->isReadyForAction(ACTION_HASTE))
+// 		{
+// 			move.setAction(ACTION_HASTE);
+// 			move.setStatusTargetId(m_state->m_self.getId());
+// 		}
+// 	}
+// 	else
+// 	{
+// 		smoothPath = getSmoothPathTo(target, map, path);
+// 	}
+// 
+// 	debugMessage.setNextWaypoint(point);
+// 	debugMessage.visualizePath(path, map);
+// 
+// 	// this may occur when navigating to the enemy in occupied cell
+// 	//assert(!smoothPath.empty());
+// 	if (!smoothPath.empty())
+// 	{
+// 		target = smoothPath.front();
+// 	}
+// 	
+// 	double angle = m_state->m_self.getAngleTo(target.m_x, target.m_y);
+// 
+// 	move.setTurn(angle);
+// 
+// 	double forwardSpeed = m_state->m_game.getWizardForwardSpeed();
+// 	if (m_state->m_isHastened)
+// 		forwardSpeed += forwardSpeed * m_state->m_game.getHastenedMovementBonusFactor();
+// 
+// 	if (abs(angle) < m_state->m_game.getStaffSector() / 4.0)
+// 	{
+// 		Vec2d vect = Vec2d(forwardSpeed * std::cos(angle), forwardSpeed * std::sin(angle));
+// 		Vec2d alt = getAlternateMoveVector(vect);
+// 		move.setSpeed(alt.m_x);
+// 		move.setStrafeSpeed(alt.m_y);
+// 	}
+// 	else
+// 	{
+// 		double angleTo = m_state->m_self.getAngleTo(target.m_x, target.m_y);
+// 		Vec2d vect = Vec2d(forwardSpeed * std::cos(angleTo), forwardSpeed * std::sin(angleTo));
+// 
+// 		Vec2d alt = getAlternateMoveVector(vect);
+// 		move.setSpeed(alt.m_x);
+// 		move.setStrafeSpeed(alt.m_y);
+// 	}
+// 
+// 	tryDisengage(move);
+// }
 
-	Point2D target = point;
-
-	PathFinder::TilesPath path;
-	const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
-	Map::PointPath smoothPath; 
-	
-	if (m_reasonableBonus != nullptr && m_reasonableBonus->m_point == point)
-	{
-		smoothPath = m_reasonableBonus->m_smoothPathCache;
-		path = m_reasonableBonus->m_tilesPathCache;
-
-		if (!m_state->m_isHastened && m_state->isReadyForAction(ACTION_HASTE))
-		{
-			move.setAction(ACTION_HASTE);
-			move.setStatusTargetId(m_state->m_self.getId());
-		}
-	}
-	else
-	{
-		smoothPath = getSmoothPathTo(target, map, path);
-	}
-
-	debugMessage.setNextWaypoint(point);
-	debugMessage.visualizePath(path, map);
-
-	// this may occur when navigating to the enemy in occupied cell
-	//assert(!smoothPath.empty());
-	if (!smoothPath.empty())
-	{
-		target = smoothPath.front();
-	}
-	
-	double angle = m_state->m_self.getAngleTo(target.m_x, target.m_y);
-
-	move.setTurn(angle);
-
-	double forwardSpeed = m_state->m_game.getWizardForwardSpeed();
-	if (m_state->m_isHastened)
-		forwardSpeed += forwardSpeed * m_state->m_game.getHastenedMovementBonusFactor();
-
-	if (abs(angle) < m_state->m_game.getStaffSector() / 4.0)
-	{
-		Vec2d vect = Vec2d(forwardSpeed * std::cos(angle), forwardSpeed * std::sin(angle));
-		Vec2d alt = getAlternateMoveVector(vect);
-		move.setSpeed(alt.m_x);
-		move.setStrafeSpeed(alt.m_y);
-	}
-	else
-	{
-		double angleTo = m_state->m_self.getAngleTo(target.m_x, target.m_y);
-		Vec2d vect = Vec2d(forwardSpeed * std::cos(angleTo), forwardSpeed * std::sin(angleTo));
-
-		Vec2d alt = getAlternateMoveVector(vect);
-		move.setSpeed(alt.m_x);
-		move.setStrafeSpeed(alt.m_y);
-	}
-
-	tryDisengage(move);
-}
-
-void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage)
-{
-	bool isToBonus = m_reasonableBonus != nullptr && m_reasonableBonus->m_point == point;
-
-	if (m_state->m_isLowHP)
-	{
-		const model::Wizard& self  = m_state->m_self;
-		const model::World& world = m_state->m_world;
-
-		const model::Unit* enemy = nullptr;
-		auto findNearestEnemy = [&self, &world, &enemy, this](const model::Unit& unit) 
-		{
-			if (unit.getFaction() == self.getFaction())  
-				return;
-
-			if (enemy == nullptr)
-			{
-				enemy = &unit;
-			}
-			else
-			{
-				double safeGap    = self.getDistanceTo(unit) - getSafeDistance(unit);
-				double oldSafeGap = self.getDistanceTo(*enemy) - getSafeDistance(*enemy);
-
-				if (safeGap < oldSafeGap)
-					enemy = &unit;
-			}
-		};
-
-		std::for_each(world.getWizards().begin(), world.getWizards().end(),     findNearestEnemy);
-		std::for_each(world.getMinions().begin(), world.getMinions().end(),     findNearestEnemy);
-		std::for_each(world.getBuildings().begin(), world.getBuildings().end(), findNearestEnemy);
-
-		if (m_state->m_nextMinionRespawnTick - world.getTickIndex() < 100)
-			std::for_each(m_state->m_enemySpawnPredictions.begin(), m_state->m_enemySpawnPredictions.end(), findNearestEnemy);
-
-		bool isAlreadySafe = enemy == nullptr || enemy->getDistanceTo(self) > getSafeDistance(*enemy);
-		if (isAlreadySafe && !isToBonus)
-			return;  // don't retreat too far, except getting a bonus
-	}
-
-	if (!m_state->m_isHastened && m_state->isReadyForAction(ACTION_HASTE) && m_state->m_self.getLife() != m_state->m_self.getMaxLife())
-	{
-		move.setAction(ACTION_HASTE);
-		move.setStatusTargetId(m_state->m_self.getId());
-	}
-
-	double forwardAngle = m_state->m_self.getAngleTo(point.m_x, point.m_y);
-	double angle = (forwardAngle < 0 ? 2*PI - forwardAngle : forwardAngle) - PI;
-
-	Point2D target = point;
-
-	PathFinder::TilesPath tiles;
-	const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
-	Map::PointPath smoothPath = getSmoothPathTo(point, map, tiles);
-
-	debugMessage.visualizePath(tiles, map);
-
-	//assert(!smoothPath.empty());
-	if (!smoothPath.empty())
-	{
-		target = smoothPath.front();
-	}
-
-	double speed = m_state->m_game.getWizardForwardSpeed();
-	if (m_state->m_isHastened)
-		speed += speed * m_state->m_game.getHastenedMovementBonusFactor();
-
-	double angleTo = m_state->m_self.getAngleTo(target.m_x, target.m_y);
-	Vec2d vect = Vec2d(speed * std::cos(angleTo), speed * std::sin(angleTo));
-
-	Vec2d alt = getAlternateMoveVector(vect);
-	move.setSpeed(alt.m_x);
-	move.setStrafeSpeed(alt.m_y);
-
-	tryDisengage(move);
-}
-
-Map::PointPath MyStrategy::getSmoothPathTo(const Point2D& point, const Map* map, PathFinder::TilesPath& tiles)
-{
-	tiles = m_pathFinder->getPath(m_state->m_self, point, *map);
-	Map::PointPath pointPath = map->tilesToPoints(tiles); pointPath.push_front(m_state->m_self);
-	Map::PointPath smoothPath = map->smoothPath(m_state->m_world, pointPath);
-
-	// remove 'self' from path after smoothing
-	if (!smoothPath.empty())
-		smoothPath.pop_front();
-
-	return smoothPath;
-}
+// void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage)
+// {
+// 	bool isToBonus = m_reasonableBonus != nullptr && m_reasonableBonus->m_point == point;
+// 
+// 	if (m_state->m_isLowHP)
+// 	{
+// 		const model::Wizard& self  = m_state->m_self;
+// 		const model::World& world = m_state->m_world;
+// 
+// 		const model::Unit* enemy = nullptr;
+// 		auto findNearestEnemy = [&self, &world, &enemy, this](const model::Unit& unit) 
+// 		{
+// 			if (unit.getFaction() == self.getFaction())  
+// 				return;
+// 
+// 			if (enemy == nullptr)
+// 			{
+// 				enemy = &unit;
+// 			}
+// 			else
+// 			{
+// 				double safeGap    = self.getDistanceTo(unit) - getSafeDistance(unit);
+// 				double oldSafeGap = self.getDistanceTo(*enemy) - getSafeDistance(*enemy);
+// 
+// 				if (safeGap < oldSafeGap)
+// 					enemy = &unit;
+// 			}
+// 		};
+// 
+// 		std::for_each(world.getWizards().begin(), world.getWizards().end(),     findNearestEnemy);
+// 		std::for_each(world.getMinions().begin(), world.getMinions().end(),     findNearestEnemy);
+// 		std::for_each(world.getBuildings().begin(), world.getBuildings().end(), findNearestEnemy);
+// 
+// 		if (m_state->m_nextMinionRespawnTick - world.getTickIndex() < 100)
+// 			std::for_each(m_state->m_enemySpawnPredictions.begin(), m_state->m_enemySpawnPredictions.end(), findNearestEnemy);
+// 
+// 		bool isAlreadySafe = enemy == nullptr || enemy->getDistanceTo(self) > getSafeDistance(*enemy);
+// 		if (isAlreadySafe && !isToBonus)
+// 			return;  // don't retreat too far, except getting a bonus
+// 	}
+// 
+// 	if (!m_state->m_isHastened && m_state->isReadyForAction(ACTION_HASTE) && m_state->m_self.getLife() != m_state->m_self.getMaxLife())
+// 	{
+// 		move.setAction(ACTION_HASTE);
+// 		move.setStatusTargetId(m_state->m_self.getId());
+// 	}
+// 
+// 	double forwardAngle = m_state->m_self.getAngleTo(point.m_x, point.m_y);
+// 	double angle = (forwardAngle < 0 ? 2*PI - forwardAngle : forwardAngle) - PI;
+// 
+// 	Point2D target = point;
+// 
+// 	PathFinder::TilesPath tiles;
+// 	const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
+// 	Map::PointPath smoothPath = getSmoothPathTo(point, map, tiles);
+// 
+// 	debugMessage.visualizePath(tiles, map);
+// 
+// 	//assert(!smoothPath.empty());
+// 	if (!smoothPath.empty())
+// 	{
+// 		target = smoothPath.front();
+// 	}
+// 
+// 	double speed = m_state->m_game.getWizardForwardSpeed();
+// 	if (m_state->m_isHastened)
+// 		speed += speed * m_state->m_game.getHastenedMovementBonusFactor();
+// 
+// 	double angleTo = m_state->m_self.getAngleTo(target.m_x, target.m_y);
+// 	Vec2d vect = Vec2d(speed * std::cos(angleTo), speed * std::sin(angleTo));
+// 
+// 	Vec2d alt = getAlternateMoveVector(vect);
+// 	move.setSpeed(alt.m_x);
+// 	move.setStrafeSpeed(alt.m_y);
+// 
+// 	tryDisengage(move);
+// }
 
 double MyStrategy::getPathLength(const Map::PointPath& path) const
 {
@@ -846,98 +785,6 @@ double MyStrategy::getMaxDamage(const model::Unit* u) const
 
 	assert(false && "unknown unit type");
 	return m_state->m_game.getMagicMissileDirectDamage();
-}
-
-Vec2d MyStrategy::getAlternateMoveVector(const Vec2d& suggestion)
-{
-	Timer timer(__FUNCTION__);
-
-	const model::Wizard& self = m_state->m_self;
-	const model::World& world = m_state->m_world;
-	const Point2D selfPoint = self;
-
-	const double LOOKUP_DISTANCE = m_state->m_game.getWizardRadius() * 3;
-
-	std::vector<std::unique_ptr<model::Tree>> fakes;
-	auto obstacles = filterPointers<const model::CircularUnit*>([&selfPoint, &LOOKUP_DISTANCE, &self](const model::CircularUnit& u)
-		{ return self.getId() != u.getId() && selfPoint.getDistanceTo(u) < LOOKUP_DISTANCE; }
-		, world.getWizards(), world.getMinions(), world.getBuildings(), world.getTrees());     // TODO - add non-traversable tiles too?
-
-	// TODO: remove this hack
-	// add tree to non-traversable cells to avoid problems with path-finder
-	const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
-	const Point2D tilesGap = Point2D(self.getRadius() * 4, self.getRadius() * 4);
-	Map::TileIndex topLeft = map->getTileIndex(selfPoint - tilesGap);
-	Map::TileIndex bottomRight = map->getTileIndex(selfPoint + tilesGap);
-
-	// todo: remove this in next sandbox iteration
-	for (int y = topLeft.m_y; y <= bottomRight.m_y; ++y)
-	{
-		for (int x = topLeft.m_x; x <= bottomRight.m_x; ++x)
-		{
-			Map::TileIndex index = Map::TileIndex(x, y);
-			if (!index.isValid(*map))
-				continue;
-
-			if (map->getTileState(index).isOccupied() && !map->getTileState(index).m_isVisible)
-			{
-				Point2D center = map->getTileCenter(index);
-				fakes.emplace_back(std::make_unique<model::Tree>(-1, center.m_x, center.m_y, 0, 0, 0, FACTION_OTHER, double(map->getTileSize()), 999, 999, std::vector<model::Status>()));
-				obstacles.push_back(fakes.back().get());
-			}
-		}
-	}
-
-	const Point2D worldTopleft     = Point2D(self.getRadius(), self.getRadius());
-	const Point2D worldBottomRight = Point2D(m_state->m_world.getWidth() - self.getRadius(), m_state->m_world.getHeight() - self.getRadius());
-
-	auto isVectorValid = [&obstacles, &self, &worldTopleft, &worldBottomRight](const Vec2d& v)
-	{
-		Vec2d absDirection = Vec2d(v).rotate(self.getAngle());
-		Vec2d newPosition  = absDirection.normalize() * self.getRadius() + absDirection;
-		Vec2d worldVector  = newPosition + Vec2d::fromPoint<Point2D>(self);
-
-		if (worldVector.m_x < worldTopleft.m_x || worldVector.m_x > worldBottomRight.m_x || worldVector.m_y < worldTopleft.m_y || worldVector.m_y > worldBottomRight.m_y)
-		{
-			return false;
-		}
-
-		return obstacles.end() == std::find_if(obstacles.begin(), obstacles.end(), [&worldVector, &self](const model::CircularUnit* obstacle)
-		{
-			return Map::isSectionIntersects(self, worldVector.toPoint<Point2D>(), *obstacle, obstacle->getRadius() + self.getRadius());
-		});
-	};
-
-	if (isVectorValid(suggestion))
-		return suggestion;
-
-	static const int    ALTERNATIVES_COUNT = 180;
-	static const double MAX_DEVIATION = PI / 2 + PI / 8;
-	static const double STEP = 2 * MAX_DEVIATION / ALTERNATIVES_COUNT;
-
-	std::vector<Vec2d> alternatives;
-	alternatives.reserve(ALTERNATIVES_COUNT);
-
-	for (double angle = -MAX_DEVIATION; angle < +MAX_DEVIATION; angle += STEP)
-	{
-		Vec2d rotated = Vec2d(suggestion).rotate(angle);
-		if (isVectorValid(rotated))
-		{
-			alternatives.push_back(rotated);
-		}
-	}
-
-	std::sort(alternatives.begin(), alternatives.end(), 
-		[&suggestion](const Vec2d& a, const Vec2d& b) { return std::abs(Vec2d::angleBetween(suggestion, a)) < std::abs(Vec2d::angleBetween(suggestion, b)); });
-
-	if (alternatives.empty())
-	{
-		return suggestion;
-	}
-	else
-	{
-		return alternatives.front();
-	}
 }
 
 void MyStrategy::learnSkill(model::Move& move)

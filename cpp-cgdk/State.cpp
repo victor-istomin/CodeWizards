@@ -46,7 +46,7 @@ State::State(const MyStrategy* strategy, const model::Wizard& self, const model:
 
 void State::updateSkillsAndActions()
 {
-	int learnedCount = std::min<int>(m_self.getLevel(), std::extent<decltype(MyStrategy::SKILLS_TO_LEARN)>::value);
+	int learnedCount = std::min<int>(m_self.getLevel(), MyStrategy::SKILLS_TO_LEARN.size());
 	std::copy_n(std::begin(MyStrategy::SKILLS_TO_LEARN), learnedCount, std::back_inserter(m_learnedSkills));
 
 	// set cooldown ticks, taking into account both specific and common cooldown

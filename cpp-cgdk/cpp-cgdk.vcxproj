@@ -243,6 +243,7 @@
     <ClCompile Include="model\Wizard.cpp" />
     <ClCompile Include="model\World.cpp" />
     <ClCompile Include="MyStrategy.cpp" />
+    <ClCompile Include="NavigationManager.cpp" />
     <ClCompile Include="NavigationMap.cpp" />
     <ClCompile Include="PathFinder.cpp" />
     <ClCompile Include="RemoteProcessClient.cpp" />
@@ -292,6 +293,7 @@
     <ClInclude Include="model\Wizard.h" />
     <ClInclude Include="model\World.h" />
     <ClInclude Include="MyStrategy.h" />
+    <ClInclude Include="NavigationManager.h" />
     <ClInclude Include="NavigationMap.h" />
     <ClInclude Include="PathFinder.h" />
     <ClInclude Include="Point2D.h" />

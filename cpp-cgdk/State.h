@@ -5,6 +5,7 @@
 #include "model/Move.h"
 
 #include <vector>
+#include <map>
 #include <array>
 #include <memory>
 #include <typeindex>
