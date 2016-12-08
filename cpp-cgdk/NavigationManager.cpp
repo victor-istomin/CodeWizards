@@ -67,7 +67,8 @@ bool NavigationManager::stageAvoidProjectiles(model::Move& move)
 	if (m_state.m_dangerousProjectiles.empty())
 		return false;
 
-	const auto& self = m_state.m_self;
+	const auto& self  = m_state.m_self;
+	const auto& world = m_state.m_world;
 	Limits speedLimit = getMaxSpeed(&self);
 
 	using ProjectileInfo = StorableState::ProjectileInfo;
@@ -113,8 +114,14 @@ bool NavigationManager::stageAvoidProjectiles(model::Move& move)
 			if (projectileInfo->m_avoidance == ProjectileInfo::AVOIDANCE_NONE)
 			{
 				// choose avoidance direction
-				auto isMoveIntersects = [&self](const Point2D& to, const model::CircularUnit& unit)
+				auto isMoveIntersects = [&self, &world](const Point2D& to, const model::CircularUnit& unit)
 				{
+					if (   to.m_y < self.getRadius() || to.m_y > (world.getHeight() - self.getRadius())
+						|| to.m_x < self.getRadius() || to.m_x >(world.getWidth() - self.getRadius()) )
+					{
+						return false; // invalid position
+					}
+
 					bool isInsersects = unit.getId() != self.getId() && Map::isSectionIntersects(self, to, unit, self.getRadius() + unit.getRadius());
 					return isInsersects;
 				};
@@ -125,7 +132,7 @@ bool NavigationManager::stageAvoidProjectiles(model::Move& move)
 					[&self, LOOKUP_DISTANCE](const model::CircularUnit& unit) {return self.getDistanceTo(unit) < LOOKUP_DISTANCE; },
 					world.getWizards(), world.getMinions(), world.getTrees(), world.getBuildings());
 
-				bool isAvoidCwOk = true;
+				bool isAvoidCwOk  = true;
 				bool isAvoidCcwOk = true;
 				for (const model::CircularUnit* obstacle : obstacles)
 				{
