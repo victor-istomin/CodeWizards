@@ -449,8 +449,8 @@ const model::LivingUnit* MyStrategy::getNearestTarget()
 	const World& world = m_state->m_world;
 	const Wizard& self = m_state->m_self;
 
-	auto targets = filterPointers<const model::LivingUnit*>([&self](const model::LivingUnit& u) { return u.getFaction() != self.getFaction(); },
-		world.getBuildings(), world.getWizards(), world.getMinions());
+	auto isNearTarget = [&self](const model::LivingUnit& u) { return isEnemy(u, self) && u.getDistanceTo(self) < (self.getVisionRange() + u.getRadius()); };
+	auto targets = filterPointers<const model::LivingUnit*>(isNearTarget, world.getBuildings(), world.getWizards(), world.getMinions());
 
 	const LivingUnit* nearestTarget = nullptr;
 
@@ -480,10 +480,6 @@ const model::LivingUnit* MyStrategy::getNearestTarget()
 		if (target->getLife() == minEnemyHealth && distance < (self.getCastRange() + target->getRadius()))   // TODO - accurate cast range
 		{
 			distance /= 2;  // this is priority hack
-		}
-		if (target->getLife() == maxEnemyHealth)
-		{
-			distance *= 1.5;  // this is priority hack
 		}
 
 		if (distance < nearestTargetDistance) 

@@ -76,15 +76,21 @@ bool NavigationManager::stageAvoidProjectiles(model::Move& move)
 	{
 		const model::Projectile* projectile = m_state.getUnit<model::Projectile>(projectileInfo->m_id);
 		double distance = self.getDistanceTo(*projectile);
-		double eta = distance / projectileInfo->m_speed.length();
+		double eta      = std::floor(distance / projectileInfo->m_speed.length());
 
 		// TODO: some missiles may be avoided by just walking back
 //		double possibleBackStep
 // 
 		double possibleDisposition = eta * speedLimit.strafe;
-		if (possibleDisposition >= self.getRadius() || projectileInfo->m_avoidance != ProjectileInfo::AVOIDANCE_NONE)
+		if (possibleDisposition > self.getRadius() || projectileInfo->m_avoidance != ProjectileInfo::AVOIDANCE_NONE)
 		{
-//			if (!m_state.m_isHastened && m_state.isReadyForAction(model::ACTION_HASTE))
+			bool isUltimateProjectile = projectile->getType() == model::PROJECTILE_FROST_BOLT || projectile->getType() == model::PROJECTILE_FIREBALL;
+			if (!m_state.m_isHastened && m_state.isReadyForAction(model::ACTION_HASTE) && isUltimateProjectile)
+			{
+				move.setAction(model::ACTION_HASTE);
+				move.setStatusTargetId(getTeammateIdToHelp());
+			}
+
 			Vec2d arriveDirection = projectileInfo->m_speed;
 			arriveDirection.normalize();
 
@@ -172,35 +178,24 @@ bool NavigationManager::stagePursuit(model::Move& move)
 
 	bool isMoveChanged = false;
 
+	// TODO - walk closer to minions if there is no another dangerous enemies (this may help gather more exp. when attacking base)
+
 	for (const model::LivingUnit* target : m_pursuitList)
 	{
-		double enemyAngle = target->getAngleTo(self);
-		if (std::abs(enemyAngle) > game.getStaffSector())
+		const double shootingDistance = self.getCastRange();
+
+		double enemyAngle      = target->getAngleTo(self);
+		double desiredDistance = shootingDistance;
+		double actualDistance  = self.getDistanceTo(*target);
+
+		if (std::abs(enemyAngle) > PI / 2)
 		{
-			const double shootingDistance = self.getCastRange();
-
 			double ticksToTurn = 1 + (std::abs(enemyAngle) - game.getStaffSector()) / game.getWizardMaxTurnAngle();
-			double desiredDistance = shootingDistance - ticksToTurn * game.getWizardStrafeSpeed();
-
-			double actualDistance = self.getDistanceTo(*target);
+			desiredDistance   -= ticksToTurn * game.getWizardStrafeSpeed();
 
 			if (actualDistance > desiredDistance)
 			{
 				if (goTo(*target, move))
-				{
-					isMoveChanged = true;
-					break;
-				}
-			}
-
-			if (MyStrategy::getWizard(target) != nullptr && actualDistance < desiredDistance)
-			{
-				// keep reasonable distance in order to support missile avoidance
-				Point2D selfPoint = self;
-				Vec2d direction = Vec2d::fromPoint(selfPoint - Point2D(*target)).normalize() * (desiredDistance - actualDistance);
-
-				Point2D newPosition = selfPoint + direction.toPoint<Point2D>();
-				if (goTo(newPosition, move, true/*no re-aim*/, false/*no path finding*/))
 				{
 					isMoveChanged = true;
 					break;
@@ -342,7 +337,63 @@ bool NavigationManager::stagePushLine(model::Move& move)
 
 bool NavigationManager::stageInCombat(model::Move& move)
 {
-	return false; // not yet implemented
+	const auto& game  = m_state.m_game;
+	const auto& self  = m_state.m_self;
+	const auto& world = m_state.m_world;
+
+	auto nearEnemies = filterPointers<const model::LivingUnit*>(
+		[&self](const model::LivingUnit& u) { return MyStrategy::isEnemy(u, self) && u.getDistanceTo(self) < self.getVisionRange(); },
+		world.getWizards(), world.getBuildings());
+
+	if (nearEnemies.empty())
+		return false;
+
+	bool isMoveChanged = false;
+
+	// walk back from enemies if enemy is too near
+	std::sort(nearEnemies.begin(), nearEnemies.end(), [&self](const auto* a, const auto* b) { return a->getDistanceTo(self) < b->getDistanceTo(self); });
+	for (const model::LivingUnit* target : nearEnemies)
+	{
+		const double shootingDistance = self.getCastRange();
+
+		double enemyAngle      = target->getAngleTo(self);
+		double desiredDistance = shootingDistance;
+		double actualDistance  = self.getDistanceTo(*target);
+
+		double maxDangerousAngle = PI / 2;
+		if (MyStrategy::getWizard(target) != nullptr && std::abs(enemyAngle) > maxDangerousAngle)
+			continue;
+
+		int cooldownTicks = std::min(
+		{
+			m_state.m_cooldownTicks[model::ACTION_MAGIC_MISSILE],
+			m_state.m_cooldownTicks[model::ACTION_FROST_BOLT],
+			m_state.m_cooldownTicks[model::ACTION_FIREBALL]
+		});
+
+		desiredDistance += cooldownTicks * game.getWizardStrafeSpeed();
+
+		if (desiredDistance > game.getScoreGainRange())
+			desiredDistance = game.getScoreGainRange() - 0.1;
+
+		double walkBackDistance =  desiredDistance - actualDistance;
+		if (walkBackDistance > 1)
+		{
+			// keep reasonable distance in order to support missile avoidance
+			Point2D selfPoint = self;
+			Vec2d direction = Vec2d::fromPoint(selfPoint - Point2D(*target)).normalize() * walkBackDistance;
+
+			Point2D newPosition = selfPoint + direction.toPoint<Point2D>();
+			if (goTo(newPosition, move, true/*no re-aim*/, false/*no path finding*/))
+			{
+				isMoveChanged = true;
+				break;
+			}
+		}
+
+	}
+
+	return isMoveChanged;
 }
 
 bool NavigationManager::goTo(const Point2D& point, model::Move& move, bool preserveAngle /*= false*/, bool usePathfinding /*= true*/)
@@ -452,7 +503,7 @@ void NavigationManager::applySpeedLimit(Vec2d &moveVector, const Limits& speedLi
 	}
 
 	auto pow2 = [](double a) { return a*a; };
-	int xLimit = moveVector.m_x < 0 ? speedLimit.backward : speedLimit.forward;
+	double xLimit = moveVector.m_x < 0 ? speedLimit.backward : speedLimit.forward;
 	double pairLimit = std::sqrt(pow2(moveVector.m_x / xLimit) + pow2(moveVector.m_y / speedLimit.strafe));
 	if (pairLimit > 1)
 		moveVector /= pairLimit;
@@ -643,7 +694,7 @@ long long NavigationManager::getTeammateIdToHelp() const
 	const auto& self = m_state.m_self;
 
 	auto teammatesAround = filterPointers<const model::Wizard*>(
-		[&self](const model::Wizard& w) { return w.getFaction() == self.getFaction() && self.getDistanceTo(w) < self.getCastRange(); },
+		[&self](const model::Wizard& w) { return w.getId() != self.getId() && w.getFaction() == self.getFaction() && self.getDistanceTo(w) < self.getCastRange(); },
 		m_state.m_world.getWizards());
 
 	std::sort(teammatesAround.begin(), teammatesAround.end(), [](const auto* a, const auto* b) {return a->getLife() < b->getLife(); });
