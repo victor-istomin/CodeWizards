@@ -56,7 +56,7 @@ private:
 	bool stagePushLine(model::Move& move);
 	bool stageInCombat(model::Move& move); // in-combat moving, except retreating
 
-	bool goTo(const Point2D& point, model::Move& move, bool preserveAngle = false);
+	bool goTo(const Point2D& point, model::Move& move, bool preserveAngle = false, bool usePathfinding = true);
 	bool isPathAcceptable(const Vec2d& moveVector, const Map::PointPath& smoothPath);
 
 	Vec2d getAlternateMoveVector(const Vec2d& suggestion);

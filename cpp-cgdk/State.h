@@ -19,22 +19,32 @@ struct StorableState
 {
 	struct ProjectileInfo
 	{
-		long long      m_id;
-		long long      m_ownerUnitId;
-		model::Faction m_faction;
-		int            m_detectionTick;
-		Point2D        m_detectionPoint;
-		Point2D        m_flightFinish;
-		double         m_radius;
-		double         m_flightDistance;
-		Vec2d          m_speed;
-		Ids            m_possibleTargets;
+		enum Avoidance
+		{
+			AVOIDANCE_NONE,
+			AVOIDANCE_CW,          // clockwise
+			AVOIDANCE_CCW,         // counter-clockwise
+			AVOIDANCE_BACK,
+		};
+
+		long long         m_id;
+		long long         m_ownerUnitId;
+		model::Faction    m_faction;
+		int               m_detectionTick;
+		Point2D           m_detectionPoint;
+		Point2D           m_flightFinish;
+		double            m_radius;
+		double            m_flightDistance;
+		Vec2d             m_speed;
+		Ids               m_possibleTargets;
+		mutable Avoidance m_avoidance;     // todo - remove 'mutable' hack!!!
 
 		ProjectileInfo(const model::Projectile& p, int tick, double flightDistance)
 			: m_id(p.getId()), m_ownerUnitId(p.getOwnerUnitId()), m_faction(p.getFaction())
 			, m_detectionTick(tick), m_detectionPoint(p), m_flightFinish(-1, -1)
 			, m_radius(p.getRadius()), m_flightDistance(flightDistance), m_speed(p.getSpeedX(), p.getSpeedY())
 			, m_possibleTargets()
+			, m_avoidance(AVOIDANCE_NONE)
 		{
 			Vec2d maxFlight = m_speed;
 			maxFlight.truncate(m_flightDistance);
@@ -93,6 +103,7 @@ struct State
 	typedef std::vector<PredictedUnit>      PredictedUnits;
 	typedef std::vector<model::SkillType>   Skills;
 	typedef StorableState::Projectiles      Projectiles;
+	typedef std::vector<StorableState::ProjectileInfo*> ProjectilePtrs;
 
 	const model::Wizard& m_self;
 	const model::World&  m_world;
@@ -105,7 +116,7 @@ struct State
 	Skills               m_learnedSkills;
 	Disposition          m_disposionAround;
 	Projectiles          m_projectileInfos;
-	Projectiles          m_dangerousProjectiles;
+	ProjectilePtrs       m_dangerousProjectiles;
 	UnitByType           m_units;
 	const MyStrategy*    m_strategy;
 

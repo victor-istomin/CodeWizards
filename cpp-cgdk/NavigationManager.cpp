@@ -67,67 +67,95 @@ bool NavigationManager::stageAvoidProjectiles(model::Move& move)
 	if (m_state.m_dangerousProjectiles.empty())
 		return false;
 
-	return false;
 	const auto& self = m_state.m_self;
 	Limits speedLimit = getMaxSpeed(&self);
 
-	for (const StorableState::ProjectileInfo& projectileInfo : m_state.m_dangerousProjectiles)
+	using ProjectileInfo = StorableState::ProjectileInfo;
+
+	for (const ProjectileInfo* projectileInfo : m_state.m_dangerousProjectiles)
 	{
-		const model::Projectile* projectile = m_state.getUnit<model::Projectile>(projectileInfo.m_id);
+		const model::Projectile* projectile = m_state.getUnit<model::Projectile>(projectileInfo->m_id);
 		double distance = self.getDistanceTo(*projectile);
-		double eta = distance / projectileInfo.m_speed.length();
+		double eta = distance / projectileInfo->m_speed.length();
 
 		// TODO: some missiles may be avoided by just walking back
 //		double possibleBackStep
 // 
-		double possibleDisposition = eta * speedLimit.hypot(false/*backward*/);
-		if (possibleDisposition >= self.getRadius())
+		double possibleDisposition = eta * speedLimit.strafe;
+		if (possibleDisposition >= self.getRadius() || projectileInfo->m_avoidance != ProjectileInfo::AVOIDANCE_NONE)
 		{
-			// try avoid missile
-			Vec2d arriveDirection = projectileInfo.m_speed;
+//			if (!m_state.m_isHastened && m_state.isReadyForAction(model::ACTION_HASTE))
+			Vec2d arriveDirection = projectileInfo->m_speed;
 			arriveDirection.normalize();
 
-			double strafeSize   = (self.getRadius() + 1);
-			double walkbackSize = projectileInfo.m_flightDistance + strafeSize - projectileInfo.m_detectionPoint.getDistanceTo(*projectile) + self.getRadius()/*todo gap?*/;
+			double strafeSize = (self.getRadius() + 1);
+			double walkbackSize = projectileInfo->m_flightDistance + strafeSize - projectileInfo->m_detectionPoint.getDistanceTo(*projectile) + self.getRadius()/*todo gap?*/;
 
-			Vec2d avoidanceVector1 = arriveDirection.ortho() * strafeSize;
-			Vec2d avoidanceVector2 = avoidanceVector1 * (-1);
-			Vec2d avoidanceBack    = arriveDirection * walkbackSize;
+			Vec2d avoidanceVector2 = arriveDirection.ortho() * strafeSize;
+			Vec2d avoidanceVector1 = avoidanceVector2 * (-1);
+			Vec2d avoidanceBack = arriveDirection * walkbackSize;
 
 			Point2D predictedPos1 = Point2D(self) + avoidanceVector1.toPoint<Point2D>();
 			Point2D predictedPos2 = Point2D(self) + avoidanceVector2.toPoint<Point2D>();
-			Point2D predictedPos3 = Point2D(self) + avoidanceVector2.toPoint<Point2D>();
+			Point2D predictedPos3 = Point2D(self) + avoidanceBack.toPoint<Point2D>();
 
-			auto isMoveIntersects = [&self](const Point2D& to, const model::CircularUnit& unit)
+			if (projectileInfo->m_avoidance == ProjectileInfo::AVOIDANCE_NONE && distance > projectileInfo->m_flightDistance)
 			{
-				return Map::isSectionIntersects(self, to, unit, self.getRadius() + unit.getRadius());
-			};
-
-			const model::World& world = m_state.m_world;
-			const double LOOKUP_DISTANCE = self.getRadius() * 4;
-			auto obstacles = filterPointers<const model::CircularUnit*>(
-				[&self, LOOKUP_DISTANCE](const model::CircularUnit& unit) {return self.getDistanceTo(unit) < LOOKUP_DISTANCE; },
-				world.getWizards(), world.getMinions(), world.getTrees(), world.getBuildings());
-
-			bool isFirstOk  = true;
-			bool isSecondOk = true;
-			for (const model::CircularUnit* obstacle : obstacles)
-			{
-				isFirstOk  = isFirstOk  && !isMoveIntersects(predictedPos1, *obstacle);
-				isSecondOk = isSecondOk && !isMoveIntersects(predictedPos2, *obstacle);
+				projectileInfo->m_avoidance = ProjectileInfo::AVOIDANCE_BACK;
 			}
 
-			if (isFirstOk)
+			if (projectileInfo->m_avoidance == ProjectileInfo::AVOIDANCE_NONE)
 			{
-				return goTo(predictedPos1, move, true);
+				// choose avoidance direction
+				auto isMoveIntersects = [&self](const Point2D& to, const model::CircularUnit& unit)
+				{
+					bool isInsersects = unit.getId() != self.getId() && Map::isSectionIntersects(self, to, unit, self.getRadius() + unit.getRadius());
+					return isInsersects;
+				};
+
+				const model::World& world = m_state.m_world;
+				const double LOOKUP_DISTANCE = self.getRadius() * 4;
+				auto obstacles = filterPointers<const model::CircularUnit*>(
+					[&self, LOOKUP_DISTANCE](const model::CircularUnit& unit) {return self.getDistanceTo(unit) < LOOKUP_DISTANCE; },
+					world.getWizards(), world.getMinions(), world.getTrees(), world.getBuildings());
+
+				bool isAvoidCwOk = true;
+				bool isAvoidCcwOk = true;
+				for (const model::CircularUnit* obstacle : obstacles)
+				{
+					isAvoidCwOk  = isAvoidCwOk  && !isMoveIntersects(predictedPos1, *obstacle);
+					isAvoidCcwOk = isAvoidCcwOk && !isMoveIntersects(predictedPos2, *obstacle);
+				}
+
+				if (isAvoidCwOk)
+					projectileInfo->m_avoidance = ProjectileInfo::AVOIDANCE_CW;
+				else if (isAvoidCcwOk)
+					projectileInfo->m_avoidance = ProjectileInfo::AVOIDANCE_CCW;
+				else
+					projectileInfo->m_avoidance = ProjectileInfo::AVOIDANCE_BACK;
 			}
-			else if (isSecondOk)
+
+			Point2D target = predictedPos3;
+			switch (projectileInfo->m_avoidance)
 			{
-				return goTo(predictedPos2, move, true);
+			case ProjectileInfo::AVOIDANCE_CW:
+				target = predictedPos1;
+				break;
+
+			case ProjectileInfo::AVOIDANCE_CCW:
+				target = predictedPos2;
+				break;
+
+			case ProjectileInfo::AVOIDANCE_BACK:
+				target = predictedPos3;
+				break;
+
+			default:
+				break;
 			}
 
 			// TODO - force haste flag in goto!
-			return goTo(predictedPos3, move, true);
+			return goTo(target, move, true/*no turn*/, false/*no pathfind*/);
 		}
 	}
 
@@ -149,14 +177,30 @@ bool NavigationManager::stagePursuit(model::Move& move)
 		double enemyAngle = target->getAngleTo(self);
 		if (std::abs(enemyAngle) > game.getStaffSector())
 		{
-			const double shootingDistance = self.getCastRange();   // TODO - accurate calculation
+			const double shootingDistance = self.getCastRange();
 
 			double ticksToTurn = 1 + (std::abs(enemyAngle) - game.getStaffSector()) / game.getWizardMaxTurnAngle();
 			double desiredDistance = shootingDistance - ticksToTurn * game.getWizardStrafeSpeed();
 
-			if (self.getDistanceTo(*target) > desiredDistance)
+			double actualDistance = self.getDistanceTo(*target);
+
+			if (actualDistance > desiredDistance)
 			{
 				if (goTo(*target, move))
+				{
+					isMoveChanged = true;
+					break;
+				}
+			}
+
+			if (MyStrategy::getWizard(target) != nullptr && actualDistance < desiredDistance)
+			{
+				// keep reasonable distance in order to support missile avoidance
+				Point2D selfPoint = self;
+				Vec2d direction = Vec2d::fromPoint(selfPoint - Point2D(*target)).normalize() * (desiredDistance - actualDistance);
+
+				Point2D newPosition = selfPoint + direction.toPoint<Point2D>();
+				if (goTo(newPosition, move, true/*no re-aim*/, false/*no path finding*/))
 				{
 					isMoveChanged = true;
 					break;
@@ -301,7 +345,7 @@ bool NavigationManager::stageInCombat(model::Move& move)
 	return false; // not yet implemented
 }
 
-bool NavigationManager::goTo(const Point2D& point, model::Move& move, bool preserveAngle /*= false*/)
+bool NavigationManager::goTo(const Point2D& point, model::Move& move, bool preserveAngle /*= false*/, bool usePathfinding /*= true*/)
 {
 	Timer timer(__FUNCTION__);
 
@@ -317,32 +361,39 @@ bool NavigationManager::goTo(const Point2D& point, model::Move& move, bool prese
 
 	Map::PointPath smoothPath;
 
-	if (m_bonus != nullptr && m_bonus->m_point == point)
+	if (usePathfinding)
 	{
-		smoothPath = m_bonus->m_smoothPathCache;
-		path = m_bonus->m_tilesPathCache;
-
-		if (!m_state.m_isHastened && m_state.isReadyForAction(model::ACTION_HASTE))
+		if (m_bonus != nullptr && m_bonus->m_point == point)
 		{
-			// TODO - don't burl all mana for haste?
-			move.setAction(model::ACTION_HASTE);
-			move.setStatusTargetId(getTeammateIdToHelp());
+			smoothPath = m_bonus->m_smoothPathCache;
+			path = m_bonus->m_tilesPathCache;
+
+			if (!m_state.m_isHastened && m_state.isReadyForAction(model::ACTION_HASTE))
+			{
+				// TODO - don't burl all mana for haste?
+				move.setAction(model::ACTION_HASTE);
+				move.setStatusTargetId(getTeammateIdToHelp());
+			}
+		}
+		else
+		{
+			smoothPath = getSmoothPathTo(target, path);
+		}
+
+		// this may occur when navigating to the enemy in occupied cell
+		//assert(!smoothPath.empty());
+		if (!smoothPath.empty())
+		{
+			target = smoothPath.front();
 		}
 	}
 	else
 	{
-		smoothPath = getSmoothPathTo(target, path);
+		smoothPath.push_back(target);
 	}
 
 	m_debugMessage.setNextWaypoint(point);
 	m_debugMessage.visualizePath(path, map);
-
-	// this may occur when navigating to the enemy in occupied cell
-	//assert(!smoothPath.empty());
-	if (!smoothPath.empty())
-	{
-		target = smoothPath.front();
-	}
 
 	double angle = self.getAngleTo(target.m_x, target.m_y);
 

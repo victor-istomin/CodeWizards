@@ -205,7 +205,7 @@ void State::updateProjectiles()
 			projectileInfo.m_possibleTargets.push_back(unit->getId());
 			if (unit->getId() == m_self.getId())
 			{
-				m_dangerousProjectiles.push_back(projectileInfo);
+				m_dangerousProjectiles.push_back(&projectileInfo);
 			}
 		}
 	}
