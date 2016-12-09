@@ -110,6 +110,8 @@ public:
 		// TODO - could became a woodcutter and slowly move though tree...
 		bool canMove = std::find_if(world.getTrees().begin(), world.getTrees().end(), isIntersectsUnit) == world.getTrees().end();
 		canMove = canMove && std::find_if(world.getBuildings().begin(), world.getBuildings().end(), isIntersectsUnit) == world.getBuildings().end();
+		canMove = canMove && std::find_if(world.getMinions().begin(), world.getMinions().end(),
+			[isIntersectsUnit](const model::Minion& m) {return m.getFaction() == model::FACTION_NEUTRAL/*not moving*/ && isIntersectsUnit(m); }) == world.getMinions().end();
 		
 		if (canMove)
 		{
