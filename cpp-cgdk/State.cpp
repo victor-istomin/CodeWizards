@@ -18,9 +18,21 @@ State::State(const MyStrategy* strategy, const model::Wizard& self, const model:
 	, m_projectileInfos(oldState.m_projectiles)
 	, m_dangerousProjectiles()
 	, m_dangerousEnemies()
+	, m_dangerousBaseDistance(game.getFactionBaseVisionRange())
 {
 	auto allUnits = filterPointers<const model::Unit*>([](...) {return true; }, 
 		m_world.getWizards(), m_world.getMinions(), m_world.getBuildings(), m_world.getBonuses(), m_world.getProjectiles(), m_world.getTrees());
+
+	const Point2D basePoint{ 400, world.getHeight() - 400 };
+	auto isEnemyNearBase = [this, &basePoint](const model::LivingUnit& unit)
+	{ 
+		return unit.getFaction() != m_self.getFaction() && unit.getFaction() != model::FACTION_NEUTRAL 
+		    && basePoint.getDistanceTo(unit) < m_dangerousBaseDistance;
+	};
+
+	m_enemiesNearBase = filterPointers<const model::LivingUnit*>(isEnemyNearBase, m_world.getWizards(), m_world.getMinions());
+	std::sort(m_enemiesNearBase.begin(), m_enemiesNearBase.end(), 
+		[&basePoint](const auto* a, const auto* b) { return basePoint.getDistanceTo(*a) < basePoint.getDistanceTo(*b); });
 
 	for (const auto* unit : allUnits)
 	{

@@ -55,6 +55,7 @@ private:
 	bool stageRetreat(model::Move& move);  // try retreat if needed
 	bool stagePushLine(model::Move& move);
 	bool stageInCombat(model::Move& move); // in-combat moving, except retreating
+	bool stageGuardBase(model::Move& move);
 
 	bool goTo(const Point2D& point, model::Move& move, bool preserveAngle = false, bool usePathfinding = true);
 	bool isPathAcceptable(const Vec2d& moveVector, const Map::PointPath& smoothPath);

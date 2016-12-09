@@ -118,6 +118,7 @@ struct State
 	Projectiles          m_projectileInfos;
 	ProjectilePtrs       m_dangerousProjectiles;
 	UnitByType           m_units;
+	LivingUnits          m_enemiesNearBase;
 	const MyStrategy*    m_strategy;
 
 	int    m_nextMinionRespawnTick;
@@ -125,6 +126,8 @@ struct State
 	bool   m_isLowHP;
 	bool   m_isHastened;
 	bool   m_isGoingToBonus;  // not yet implemented, always false
+
+	const double m_dangerousBaseDistance;
 
 	std::array<int, model::_ACTION_COUNT_> m_cooldownTicks;
 

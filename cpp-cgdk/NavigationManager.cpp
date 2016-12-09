@@ -33,6 +33,7 @@ void NavigationManager::makeMove(model::Move& move)
 	StageFunc stages[] = 
 	{ 
 		&NavigationManager::stageAvoidProjectiles,
+		&NavigationManager::stageGuardBase,
 		&NavigationManager::stagePursuit,
 		&NavigationManager::stageBonus,
 		&NavigationManager::stageRetreat,    // 'stageBonus' placed before because it's responsible of retreating to bonus
@@ -57,6 +58,9 @@ Map::PointPath NavigationManager::getSmoothPathTo(const Point2D& point, PathFind
 	// remove 'self' from path after smoothing
 	if (!smoothPath.empty())
 		smoothPath.pop_front();
+
+	if (smoothPath.size() > 1 && smoothPath.front().getDistanceTo(self) <= map->getTileSize())
+		smoothPath.pop_front();  // in-tile navigation is not supported by pathfinger and may result in getting stuck in this tile's center
 
 	return smoothPath;
 }
@@ -403,6 +407,51 @@ bool NavigationManager::stageInCombat(model::Move& move)
 	return isMoveChanged;
 }
 
+bool NavigationManager::stageGuardBase(model::Move& move)
+{
+	const State::LivingUnits& attackers = m_state.m_enemiesNearBase;
+	if (attackers.empty())
+		return false;   // base is already safe
+
+	const auto& self = m_state.m_self;
+	const auto* nearestEnemy = attackers.front();
+
+	double worldSize = m_state.m_world.getWidth();
+	static const Point2D BASE_POINT{ 400, worldSize - 400 };
+	static const Point2D ENEMY_BASE{ worldSize - 400, 400 };
+
+	if (ENEMY_BASE.getDistanceTo(self) < m_state.m_dangerousBaseDistance + self.getVisionRange() / 2)
+		return false;  // too far from base, it's reasonable to continue pushing enemy base
+
+	Point2D guardPoints[] = { Point2D(200, worldSize - 600)/*top entry*/, Point2D(600, worldSize - 600)/*mid entry*/, Point2D(600, worldSize - 200) /* bottom entry*/ };
+	std::sort(std::begin(guardPoints), std::end(guardPoints),
+		[&nearestEnemy](const auto& a, const auto& b) { return a.getDistanceTo(*nearestEnemy) < b.getDistanceTo(*nearestEnemy); });
+
+	if (BASE_POINT.getDistanceTo(self) > m_state.m_dangerousBaseDistance)
+	{
+		if (!m_state.m_isHastened && m_state.isReadyForAction(model::ACTION_HASTE))
+		{
+			move.setAction(model::ACTION_HASTE);
+			move.setStatusTargetId(getTeammateIdToHelp());
+		}
+	}
+
+	Point2D guardPoint = guardPoints[0];
+	if (guardPoints->getDistanceTo(self) > self.getCastRange())
+	{
+		return goTo(guardPoint, move);
+	}
+
+	bool canHitEnemy = attackers.end() != std::find_if(attackers.begin(), attackers.end(), [&self](const auto* enemy) {return self.getDistanceTo(*enemy) < self.getCastRange(); });
+	bool isReadyForAction = m_state.isReadyForAction(model::ACTION_MAGIC_MISSILE) || m_state.isReadyForAction(model::ACTION_FROST_BOLT) || m_state.isReadyForAction(model::ACTION_FIREBALL);
+	if (!canHitEnemy && isReadyForAction)
+	{
+		return goTo(*nearestEnemy, move);
+	}
+
+	return false; // already here
+}
+
 bool NavigationManager::goTo(const Point2D& point, model::Move& move, bool preserveAngle /*= false*/, bool usePathfinding /*= true*/)
 {
 	Timer timer(__FUNCTION__);
@@ -542,7 +591,7 @@ Vec2d NavigationManager::getAlternateMoveVector(const Vec2d& suggestion)
 	const model::World& world = m_state.m_world;
 	const Point2D selfPoint = self;
 
-	const double LOOKUP_DISTANCE = m_state.m_game.getWizardRadius() * 3;
+	const double LOOKUP_DISTANCE = m_state.m_game.getWizardRadius() * 4;
 
 	std::vector<std::unique_ptr<model::Tree>> fakes;
 	auto obstacles = filterPointers<const model::CircularUnit*>(
