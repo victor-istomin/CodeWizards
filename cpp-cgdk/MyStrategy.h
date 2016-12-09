@@ -64,13 +64,13 @@ private:
 	std::unique_ptr<Point2D>           m_spawnPoint;
 	std::unique_ptr<NavigationManager> m_navigation;
 
-	TWaypoints m_waypoints;
 	int        m_currentWaypointIndex;
 	const BonusSpawn* m_reasonableBonus;
 
-	int m_lastStrafeChangeTick;
-	double m_lastStrafe;
+	int      m_lastStrafeChangeTick;
+	double   m_lastStrafe;
 	Point2D* m_guardPoint;
+	mutable model::LaneType m_laneType;
 
 	void initialSetup();
 	void initState(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, DebugMessage& debugMessage);
@@ -102,8 +102,11 @@ public:
 	template <typename UnitType> double getMaxDamage(const UnitType& u) const { return u.getDamage(); }
 	// also, there is a specialization out of class scope
 
+	const TWaypoints& getWaypoints() { return g_waypointsMap[m_laneType]; }
+	void suggestLaneType(model::LaneType lane) const;  // TODO!!!
 
 	MapsManager& getMaps() const { return *m_maps; }
+
 
 	static auto getWizard(const model::Unit* unit)    { return dynamic_cast<const model::Wizard*>(unit); }
 	static auto getMinion(const model::Unit* unit)    { return dynamic_cast<const model::Minion*>(unit); }

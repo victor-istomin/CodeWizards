@@ -407,8 +407,6 @@ void MyStrategy::initialSetup()
 	default:
 		break;
 	}
-
-	m_waypoints = g_waypointsMap[line];
 }
 
 void MyStrategy::initState(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, DebugMessage& debugMessage)
@@ -417,11 +415,60 @@ void MyStrategy::initState(const model::Wizard& self, const model::World& world,
 	m_state->updateDispositionAround();
 	m_state->updateDangerousEnemies();
 
-	if (m_waypoints.empty())
+	static bool isInitialized = false;
+	if (!isInitialized)
 	{
+		switch (self.getId())
+		{
+		case 1:
+		case 2:
+		case 6:
+		case 7:
+			m_laneType = LANE_TOP;
+			m_guardPoint = &TOP_GUARD_POINT;
+			break;
+
+		case 3:
+		case 8:
+			m_laneType = LANE_MIDDLE;
+			m_guardPoint = &MID_GUARD_POINT;
+			break;
+
+		case 4:
+		case 5:
+		case 9:
+		case 10:
+			m_laneType = LANE_BOTTOM;
+			m_guardPoint = &BOTTOM_GUARD_POINT;
+			break;
+
+		default:
+			break;
+		}
+
 		// initial setup
 		initialSetup();
+		isInitialized = true;
 	}
+
+	switch (m_laneType)
+	{
+	case LANE_TOP:
+		m_guardPoint = &TOP_GUARD_POINT;
+		break;
+
+	case LANE_MIDDLE:
+		m_guardPoint = &MID_GUARD_POINT;
+		break;
+
+	case LANE_BOTTOM:
+		m_guardPoint = &BOTTOM_GUARD_POINT;
+		break;
+
+	default:
+		break;
+	}
+
 
 	if (!m_maps)
 	{
@@ -439,7 +486,7 @@ void MyStrategy::initState(const model::Wizard& self, const model::World& world,
 		m_currentWaypointIndex = 1;   // [0] waypoint is for retreating only
 	}
 
-	m_navigation = std::make_unique<NavigationManager>(*this, *m_state, m_waypoints, *m_guardPoint, *m_pathFinder, debugMessage);
+	m_navigation = std::make_unique<NavigationManager>(*this, *m_state, getWaypoints(), *m_guardPoint, *m_pathFinder, debugMessage);
 	m_reasonableBonus = getReasonableBonus();   // TODO - remove 'm_reasonableBonus'
 	m_navigation->setBonusPoint(m_reasonableBonus);
 }
@@ -790,6 +837,16 @@ double MyStrategy::getMaxDamage(const model::Unit* u) const
 	return m_state->m_game.getMagicMissileDirectDamage();
 }
 
+void MyStrategy::suggestLaneType(model::LaneType lane) const
+{
+	static int lastChange = 0;
+	if (m_state->m_world.getTickIndex() - lastChange > 2000)
+	{
+		m_laneType = lane;
+		lastChange = m_state->m_world.getTickIndex();
+	}
+}
+
 void MyStrategy::learnSkill(model::Move& move)
 {
 	const int level  = m_state->m_self.getLevel();
@@ -817,7 +874,9 @@ MyStrategy::MyStrategy()
 	, m_currentWaypointIndex(1) // [0] waypoint is for retreating only
 	, m_oldState()
 	, m_reasonableBonus(nullptr)
+	, m_laneType(model::LANE_MIDDLE)
 {
+	
 }
 
 

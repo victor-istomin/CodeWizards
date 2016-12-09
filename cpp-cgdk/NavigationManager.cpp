@@ -59,7 +59,7 @@ Map::PointPath NavigationManager::getSmoothPathTo(const Point2D& point, PathFind
 	if (!smoothPath.empty())
 		smoothPath.pop_front();
 
-	if (smoothPath.size() > 1 && smoothPath.front().getDistanceTo(self) <= map->getTileSize())
+	if (smoothPath.size() > 1 && smoothPath.front().getDistanceTo(self) <= 1.5 * map->getTileSize())
 		smoothPath.pop_front();  // in-tile navigation is not supported by pathfinger and may result in getting stuck in this tile's center
 
 	return smoothPath;
@@ -423,9 +423,20 @@ bool NavigationManager::stageGuardBase(model::Move& move)
 	if (ENEMY_BASE.getDistanceTo(self) < m_state.m_dangerousBaseDistance + self.getVisionRange() / 2)
 		return false;  // too far from base, it's reasonable to continue pushing enemy base
 
-	Point2D guardPoints[] = { Point2D(200, worldSize - 600)/*top entry*/, Point2D(600, worldSize - 600)/*mid entry*/, Point2D(600, worldSize - 200) /* bottom entry*/ };
+	Point2D TOP_GUARD = Point2D(200, worldSize - 600);
+	Point2D MID_GUARD = Point2D(600, worldSize - 600); 
+	Point2D BOT_GUARD = Point2D(600, worldSize - 200);
+	
+	Point2D guardPoints[] = {TOP_GUARD, MID_GUARD, BOT_GUARD};
 	std::sort(std::begin(guardPoints), std::end(guardPoints),
 		[&nearestEnemy](const auto& a, const auto& b) { return a.getDistanceTo(*nearestEnemy) < b.getDistanceTo(*nearestEnemy); });
+
+	if (guardPoints[0] == TOP_GUARD)
+		m_strategy.suggestLaneType(model::LANE_TOP);
+	if (guardPoints[0] == BOT_GUARD)
+		m_strategy.suggestLaneType(model::LANE_BOTTOM);
+	if (guardPoints[0] == MID_GUARD)
+		m_strategy.suggestLaneType(model::LANE_MIDDLE);
 
 	if (BASE_POINT.getDistanceTo(self) > m_state.m_dangerousBaseDistance)
 	{
@@ -444,7 +455,7 @@ bool NavigationManager::stageGuardBase(model::Move& move)
 
 	bool canHitEnemy = attackers.end() != std::find_if(attackers.begin(), attackers.end(), [&self](const auto* enemy) {return self.getDistanceTo(*enemy) < self.getCastRange(); });
 	bool isReadyForAction = m_state.isReadyForAction(model::ACTION_MAGIC_MISSILE) || m_state.isReadyForAction(model::ACTION_FROST_BOLT) || m_state.isReadyForAction(model::ACTION_FIREBALL);
-	if (!canHitEnemy && isReadyForAction)
+	if (!canHitEnemy && isReadyForAction && !m_state.m_isLowHP)
 	{
 		return goTo(*nearestEnemy, move);
 	}
@@ -640,7 +651,7 @@ Vec2d NavigationManager::getAlternateMoveVector(const Vec2d& suggestion)
 		Point2D wordPosition = worldVector.toPoint<Point2D>();
 		return obstacles.end() == std::find_if(obstacles.begin(), obstacles.end(), [&wordPosition, &self](const model::CircularUnit* obstacle)
 		{
-			double radius = obstacle->getRadius() + self.getRadius();
+			double radius = obstacle->getRadius() + self.getRadius() + 1;
 			if (Map::isSectionIntersects(self, wordPosition, *obstacle, radius))
 				return true;
 
@@ -671,16 +682,29 @@ Vec2d NavigationManager::getAlternateMoveVector(const Vec2d& suggestion)
 		}
 	}
 
-	std::sort(alternatives.begin(), alternatives.end(),
-		[&suggestion](const Vec2d& a, const Vec2d& b) { return std::abs(Vec2d::angleBetween(suggestion, a)) < std::abs(Vec2d::angleBetween(suggestion, b)); });
+	typedef std::pair<double/*deviation*/, Vec2d> Deviation;
+	std::vector<Deviation> deviations;
+	if (!alternatives.empty())
+	{
+		deviations.reserve(alternatives.size());
+	}
 
-	if (alternatives.empty())
+	Vec2d previousMove{ self.getSpeedX(), self.getSpeedY() };
+	for (const Vec2d& alt : alternatives)
+	{
+		double deviation = std::abs(Vec2d::angleBetween(suggestion, alt)) + std::abs(Vec2d::angleBetween(previousMove, alt)) / 3;
+		deviations.emplace_back(deviation, alt);
+	}
+
+	std::sort(deviations.begin(), deviations.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+
+	if (deviations.empty())
 	{
 		return suggestion;
 	}
 	else
 	{
-		return alternatives.front();
+		return deviations.front().second;
 	}
 }
 
