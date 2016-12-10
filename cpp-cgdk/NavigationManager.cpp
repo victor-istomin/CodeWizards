@@ -394,7 +394,27 @@ bool NavigationManager::stageInCombat(model::Move& move)
 			Point2D selfPoint = self;
 			Vec2d direction = Vec2d::fromPoint(selfPoint - Point2D(*target)).normalize() * walkBackDistance;
 
+			Point2D previousWaypoint = getPreviousWaypoint();
+			PathFinder::TilesPath tiles;
+			Map::PointPath path = getSmoothPathTo(previousWaypoint, tiles);
+			
 			Point2D newPosition = selfPoint + direction.toPoint<Point2D>();
+
+			auto nearUnits = filterPointers<const model::LivingUnit*>(
+				[&selfPoint, &self, walkBackDistance](const auto& u) { return selfPoint.getDistanceTo(u) < walkBackDistance + 4 * self.getRadius(); },
+				world.getWizards(), world.getBuildings(), world.getMinions(), world.getTrees());
+
+			bool isDestinationOccupied = nearUnits.end() != std::find_if(nearUnits.begin(), nearUnits.end(), 
+				[&self, &newPosition](const auto* unit)
+			{
+				return Map::isSectionIntersects(self, newPosition, *unit, self.getRadius() + unit->getRadius() + 1);
+			});
+
+			if (!path.empty() && (isDestinationOccupied || std::abs(Vec2d::angleBetween(Vec2d::fromPoint(path.front() - selfPoint), direction) < PI / 2)))
+			{
+				newPosition = path.front();
+			}
+
 			if (goTo(newPosition, move, true/*no re-aim*/, false/*no path finding*/))
 			{
 				isMoveChanged = true;

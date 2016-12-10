@@ -55,6 +55,7 @@ void WorldMap::calculateObstacles(const model::Game &game, const model::World &w
 	const auto& buildings = world.getBuildings();
 	fillWith(buildings);
 	fillWith(world.getTrees());
+	fillWith(world.getMinions(), [](const model::Minion& m) {return m.getFaction() == model::FACTION_NEUTRAL; });  // neutral miniouns usually staying without move
 
 	// mirror building for enemy's coordinates
 	Point2D worldSize = Point2D(world.getWidth(), world.getHeight());
