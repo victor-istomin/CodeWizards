@@ -70,6 +70,7 @@ private:
 	int      m_lastStrafeChangeTick;
 	double   m_lastStrafe;
 	Point2D* m_guardPoint;
+	const model::Game*      m_game;
 	mutable model::LaneType m_laneType;
 
 	void initialSetup();
@@ -95,6 +96,7 @@ public:
 
 	bool considerRetreat(model::Move& move, DebugMessage& debugMessage);
 	bool considerAttack (model::Move &move, bool isRetreating, DebugMessage& debugMessage);
+	void considerAnotherLane();
 
 	double getSafeDistance(const model::Unit& enemy) const;
 
@@ -102,8 +104,11 @@ public:
 	template <typename UnitType> double getMaxDamage(const UnitType& u) const { return u.getDamage(); }
 	// also, there is a specialization out of class scope
 
-	const TWaypoints& getWaypoints() { return g_waypointsMap[m_laneType]; }
+	const TWaypoints& getWaypoints() const                     { return g_waypointsMap[m_laneType]; }
+	const TWaypoints& getWaypoints(model::LaneType lane) const { return g_waypointsMap[lane]; }
+
 	void suggestLaneType(model::LaneType lane) const;  // TODO!!!
+	int getTimeToChooseLane() const;
 
 	MapsManager& getMaps() const { return *m_maps; }
 

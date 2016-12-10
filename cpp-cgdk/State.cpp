@@ -47,6 +47,7 @@ State::State(const MyStrategy* strategy, const model::Wizard& self, const model:
 	updateBonuses();
 	updatePredictions();
 	updateSkillsAndActions();
+	updateWizardLanes();
 
 	auto statuses = m_self.getStatuses();
 	m_isHastened = statuses.end() != std::find_if(statuses.begin(), statuses.end(), [](const model::Status& s) { return s.getType() == model::STATUS_HASTENED; });
@@ -141,6 +142,41 @@ void State::updateDispositionAround()
 	std::for_each(m_world.getWizards().begin(), m_world.getWizards().end(), applyDisposition);
 	std::for_each(m_world.getBuildings().begin(), m_world.getBuildings().end(), applyDisposition);
 	std::for_each(m_world.getMinions().begin(), m_world.getMinions().end(), applyDisposition);
+}
+
+void State::updateWizardLanes()
+{
+	typedef std::vector<Point2D> PointsVector;
+
+	m_wizardLanes.clear();
+	for (const model::Wizard& wizard : m_world.getWizards())
+	{
+		m_wizardLanes.emplace_back(wizard, m_self.getFaction());
+
+		if (m_world.getTickIndex() < m_strategy->getTimeToChooseLane())
+			continue;  // let teammates choose lane
+
+		double          minLaneDistance = std::numeric_limits<double>::infinity();
+		model::LaneType nearestLane     = model::_LANE_UNKNOWN_;
+
+		static const model::LaneType lanes[] = { model::LANE_TOP, model::LANE_BOTTOM, model::LANE_MIDDLE };
+		for (model::LaneType lane : lanes)
+		{
+			PointsVector waypoints = m_strategy->getWaypoints(lane);
+			for (const Point2D& point : waypoints)
+			{
+				double distance = point.getDistanceTo(wizard);
+				if (distance < minLaneDistance)
+				{
+					minLaneDistance = distance;
+					nearestLane     = lane;
+				}
+			}
+		}
+
+		WizardStats& stats = m_wizardLanes.back();
+		stats.m_lane = nearestLane;
+	}
 }
 
 void State::updateProjectiles()

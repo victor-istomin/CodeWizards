@@ -78,6 +78,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 		debugMessage.visualizeBonuses(m_state->m_bonuses);
 	}
 
+	considerAnotherLane();
 	bool isRetreating = considerRetreat(move, debugMessage);
 
 	considerAttack(move, isRetreating, debugMessage);
@@ -305,6 +306,81 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 	return true;
 }
 
+void MyStrategy::considerAnotherLane()
+{
+	int timeToChoose = getTimeToChooseLane();
+	if (m_state->m_world.getTickIndex() < timeToChoose)
+		return;
+
+	struct Stats
+	{
+		int teammatesCount;
+		int enemiesCount;
+
+		Stats() : teammatesCount(0), enemiesCount(0) {}
+	};
+
+	Stats overall;
+	std::map<model::LaneType, Stats> byLane;
+	Stats* selfLane = nullptr;
+	model::LaneType selfLaneType = model::_LANE_UNKNOWN_;
+
+	for (const State::WizardStats& wizard : m_state->m_wizardLanes)
+	{
+		Stats& laneStat    = byLane[wizard.m_lane];
+		int&   counter     = wizard.m_isTeammate ? overall.teammatesCount  : overall.enemiesCount;
+		int&   laneCounter = wizard.m_isTeammate ? laneStat.teammatesCount : laneStat.enemiesCount;
+
+		++counter;
+		++laneCounter;
+
+		if (wizard.m_id == m_state->m_self.getId())
+		{
+			selfLane     = &laneStat;
+			selfLaneType = wizard.m_lane;
+		}
+	}
+
+	if (selfLane->teammatesCount == 1)
+		return;  // don't leave lave un-guarded
+
+	if (overall.teammatesCount < 5)
+		return; // hope that teammate fix situation after re-spawn
+
+	bool isEmptyLane = false;
+	model::LaneType lessDefend = model::_LANE_UNKNOWN_;
+
+	for (const auto& lane : byLane)
+	{
+		model::LaneType laneType  = lane.first;
+		const Stats&    laneStats = lane.second;
+
+		if (laneType != model::LANE_BOTTOM && laneType != model::LANE_MIDDLE && laneType != model::LANE_TOP)
+			continue;  // not a lane
+
+		if (laneStats.teammatesCount == 0)
+		{
+			isEmptyLane = true;
+			lessDefend = laneType;
+		}
+
+		if (!isEmptyLane && (laneStats.enemiesCount - laneStats.teammatesCount) > 1)
+		{
+			lessDefend = laneType;
+		}
+	}
+
+	if (lessDefend != model::_LANE_UNKNOWN_ && lessDefend != selfLaneType)
+	{
+		suggestLaneType(lessDefend);
+	}
+}
+
+int MyStrategy::getTimeToChooseLane() const
+{
+	return m_game->getFactionMinionAppearanceIntervalTicks() / 2;
+}
+
 bool MyStrategy::isUnitSeeing(const model::Unit* unit, const Point2D& point)
 {
 	double distance = point.getDistanceTo(*unit);
@@ -391,6 +467,8 @@ void MyStrategy::initialSetup()
 
 void MyStrategy::initState(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, DebugMessage& debugMessage)
 {
+	m_game = &game;
+
 	m_state = std::make_unique<State>(this, self, world, game, move, m_oldState);
 	m_state->updateDispositionAround();
 	m_state->updateDangerousEnemies();
@@ -834,7 +912,7 @@ double MyStrategy::getMaxDamage(const model::Unit* u) const
 void MyStrategy::suggestLaneType(model::LaneType lane) const
 {
 	static int lastChange = 0;
-	if (m_state->m_world.getTickIndex() - lastChange > 2000)
+	if (m_state->m_world.getTickIndex() - lastChange > getTimeToChooseLane())
 	{
 		m_laneType = lane;
 		lastChange = m_state->m_world.getTickIndex();
@@ -869,6 +947,7 @@ MyStrategy::MyStrategy()
 	, m_oldState()
 	, m_reasonableBonus(nullptr)
 	, m_laneType(model::LANE_MIDDLE)
+	, m_game(nullptr)
 {
 	
 }

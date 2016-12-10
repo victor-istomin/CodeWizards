@@ -96,14 +96,24 @@ struct State
 		int teammatesCount() const { return teammateWizards + teammateBuildings + teammateMinions; }
 	};
 
+	struct WizardStats
+	{
+		long long       m_id;
+		model::LaneType m_lane;
+		bool            m_isTeammate;
+
+		WizardStats(const model::Wizard& w, model::Faction selfFaction) 
+			: m_id(w.getId()), m_lane(model::_LANE_UNKNOWN_), m_isTeammate(w.getFaction() == selfFaction) {};
+	};
+
 	typedef std::map<long long, const model::Unit*>   UnitById;
 	typedef std::map<std::type_index, UnitById>       UnitByType;
-	typedef std::vector<const model::Unit*> PointsVector;
 	typedef std::vector<const model::LivingUnit*> LivingUnits;
 	typedef std::vector<PredictedUnit>      PredictedUnits;
 	typedef std::vector<model::SkillType>   Skills;
 	typedef StorableState::Projectiles      Projectiles;
 	typedef std::vector<StorableState::ProjectileInfo*> ProjectilePtrs;
+	typedef std::vector<WizardStats> WizardStatsList;
 
 	const model::Wizard& m_self;
 	const model::World&  m_world;
@@ -119,6 +129,7 @@ struct State
 	ProjectilePtrs       m_dangerousProjectiles;
 	UnitByType           m_units;
 	LivingUnits          m_enemiesNearBase;
+	WizardStatsList      m_wizardLanes;
 	const MyStrategy*    m_strategy;
 
 	int    m_nextMinionRespawnTick;
@@ -138,6 +149,7 @@ struct State
 	void updatePredictions();
 	void updateSkillsAndActions();
 	void updateDispositionAround();
+	void updateWizardLanes();
 
 	int lastBonusSpawnTick() const { return (m_world.getTickIndex() / m_game.getBonusAppearanceIntervalTicks()) * m_game.getBonusAppearanceIntervalTicks(); }
 	int nextBonusSpawnTick() const { return lastBonusSpawnTick() + m_game.getBonusAppearanceIntervalTicks(); }
