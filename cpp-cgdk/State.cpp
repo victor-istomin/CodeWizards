@@ -162,7 +162,9 @@ void State::updateProjectiles()
 		auto foundIt = std::find(m_projectileInfos.begin(), m_projectileInfos.end(), newProjectile);
 		if (foundIt == m_projectileInfos.end() && newProjectile.getType() != model::PROJECTILE_DART)  // don't track dart - it's too fast
 		{
-			m_projectileInfos.emplace_back(newProjectile, m_world.getTickIndex(), m_game.getWizardCastRange());
+			bool flightBonus = newProjectile.getType() == model::PROJECTILE_FIREBALL ? m_game.getFireballExplosionMinDamageRange() : 0;
+
+			m_projectileInfos.emplace_back(newProjectile, m_world.getTickIndex(), m_game.getWizardCastRange() + flightBonus);
 			const model::Wizard* owner = getUnit<model::Wizard>(newProjectile.getOwnerUnitId());
 			if (owner != nullptr)
 			{
@@ -170,7 +172,7 @@ void State::updateProjectiles()
 				Vec2d direction = Vec2d(projectileInfo.m_speed).normalize();
 
 				projectileInfo.m_detectionPoint = *owner;
-				projectileInfo.m_flightDistance = owner->getCastRange();
+				projectileInfo.m_flightDistance = owner->getCastRange() + flightBonus;
 				projectileInfo.m_flightFinish   = projectileInfo.m_detectionPoint + (direction * projectileInfo.m_flightDistance).toPoint<Point2D>();
 			}
 		}
