@@ -780,10 +780,15 @@ Point2D NavigationManager::getPreviousWaypoint()
 		const Point2D& current  = m_waypoints[currentIndex];
 		const Point2D& previous = m_waypoints[currentIndex - 1];
 
-		if (std::abs(self.getAngleTo(current.m_x, current.m_y) - self.getAngleTo(previous.m_x, previous.m_y)) <= PI / 2)
+		if (   self.getDistanceTo(current.m_x, current.m_y) > MyStrategy::WAYPOINT_RADIUS 
+		    && std::abs(self.getAngleTo(current.m_x, current.m_y) - self.getAngleTo(previous.m_x, previous.m_y)) <= PI / 2)
+		{
 			return current;
+		}
 		else
+		{
 			return previous;
+		}
 	}
 
 	return m_waypoints[0];
