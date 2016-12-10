@@ -192,12 +192,11 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 	}, m_state->m_world.getTrees());
 
 	// TODO - more accurate mana regeneration
-	const double damageMm = m_state->m_game.getMagicMissileDirectDamage();
-	const double damageFB = m_state->m_game.getFrostBoltDirectDamage();
+	const double damageMm      = game.getMagicMissileDirectDamage();
+	const double damageFB      = game.getFrostBoltDirectDamage();
 	const double shootingAngle = game.getStaffSector() / 2.0;
 
-	double frostCooldownMana = m_state->m_game.getFrostBoltCooldownTicks() * m_state->m_game.getWizardBaseManaRegeneration()
-		- m_state->m_game.getMagicMissileManacost(); // usually, we're firing MM while FB cools down
+	double frostCooldownMana   = game.getFrostBoltCooldownTicks() * game.getWizardBaseManaRegeneration() - game.getMagicMissileManacost(); // usually, we're firing MM while FB cools down
 
 	bool isLastFrostBolt = ((m_state->m_self.getMana() + frostCooldownMana) / m_state->m_game.getFrostBoltManacost()) < 2.0;
 
@@ -474,8 +473,9 @@ void MyStrategy::initState(const model::Wizard& self, const model::World& world,
 
 const model::LivingUnit* MyStrategy::getNearestTarget()
 {
-	const World& world = m_state->m_world;
-	const Wizard& self = m_state->m_self;
+	const World&  world = m_state->m_world;
+	const Wizard& self  = m_state->m_self;
+	const Game&   game  = m_state->m_game;
 
 	auto isNearTarget = [&self](const model::LivingUnit& u) { return isEnemy(u, self) && u.getDistanceTo(self) < (self.getVisionRange() + u.getRadius()); };
 	auto targets = filterPointers<const model::LivingUnit*>(isNearTarget, world.getBuildings(), world.getWizards(), world.getMinions());
@@ -509,6 +509,19 @@ const model::LivingUnit* MyStrategy::getNearestTarget()
 		{
 			distance /= 2;  // this is priority hack
 		}
+
+		double distanceHandicap = 0;
+		const auto* wizard = getWizard(target);
+		const auto* tower  = getBuilding(target);
+		if (wizard != nullptr || tower != nullptr)
+		{
+			// Tower has priority over minion, because it provides more experience.
+			// Wizard has more priority over minion, because wizard is getting experience and could cast
+			double enemyAttackRange = (wizard != nullptr ? wizard->getCastRange() : game.getGuardianTowerAttackRange());
+			distanceHandicap = enemyAttackRange - game.getFetishBlowdartAttackRange() - Point2D::k_epsilon;
+		}
+
+		distance -= distanceHandicap;
 
 		if (distance < nearestTargetDistance) 
 		{
