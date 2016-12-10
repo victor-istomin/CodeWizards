@@ -211,6 +211,7 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 			|| (targetWizard != nullptr && canTakedownWithFBMM)
 			/*TODO: || isKamikazeMode - shoot before die*/);
 
+	bool isActionSet = false;
 	if (m_state->isReadyForAction(ACTION_FROST_BOLT) && shouldShootLastFB)
 	{
 		std::vector<const model::LivingUnit*> candidates;
@@ -263,9 +264,13 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 		angle = m_state->m_self.getAngleTo(*nearestTarget);
 		distance = m_state->m_self.getDistanceTo(*nearestTarget);
 
-		move.setAction(ActionType::ACTION_FROST_BOLT);
-		move.setCastAngle(angle);
-		move.setMinCastDistance(distance - nearestTarget->getRadius() + game.getFrostBoltRadius());
+		if (abs(angle) < shootingAngle)
+		{
+			move.setAction(ActionType::ACTION_FROST_BOLT);
+			move.setCastAngle(angle);
+			move.setMinCastDistance(distance - nearestTarget->getRadius() + game.getFrostBoltRadius());
+			isActionSet = true;
+		}
 	}
 	else if (m_state->isReadyForAction(ACTION_FROST_BOLT) && !isLastFrostBolt && !isPredictionMode && treesBetween.empty())
 	{
@@ -275,6 +280,7 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 			move.setAction(ActionType::ACTION_FROST_BOLT);
 			move.setCastAngle(angle);
 			move.setMinCastDistance(distance - nearestTarget->getRadius() + game.getFrostBoltRadius());
+			isActionSet = true;
 		}
 	}
 	else if (m_state->isReadyForAction(ActionType::ACTION_MAGIC_MISSILE))
@@ -285,9 +291,11 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 			move.setAction(ActionType::ACTION_MAGIC_MISSILE);
 			move.setCastAngle(angle);
 			move.setMinCastDistance(distance - nearestTarget->getRadius() + game.getMagicMissileRadius());
+			isActionSet = true;
 		}
 	}
-	else if (m_state->isReadyForAction(ActionType::ACTION_STAFF))
+
+	if (!isActionSet && m_state->isReadyForAction(ActionType::ACTION_STAFF))
 	{
 		if (distance < game.getStaffRange() + nearestTarget->getRadius())
 		{
@@ -295,33 +303,6 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 		}
 	}
 
-	// 			if (m_state->isUnderMissile())
-	// 			{
-	// 				const auto& projectiles = m_state->m_world.getProjectiles();
-	// 				auto mostDangerous = projectiles.end();
-	// 				for (const StorableState::ProjectileInfo& projectileInfo : m_state->m_projectileInfos)
-	// 				{
-	// 					const auto& possibleTargets = projectileInfo.m_possibleTargets;
-	// 					if (possibleTargets.end() == std::find(possibleTargets.begin(), possibleTargets.end(), m_state->m_self.getId()))
-	// 						continue;
-	// 
-	// 					auto projectileIt = std::find_if(projectiles.begin(), projectiles.end(), [&projectileInfo](const auto& p) {return p.getId() == projectileInfo.m_id; });
-	// 					assert(projectileIt != projectiles.end() && "should disappear from projectiles info");
-	// 					if (projectileIt == projectiles.end())
-	// 						continue;
-	// 
-	// 					if (mostDangerous == projectiles.end() || mostDangerous->getRadius() < projectileIt->getRadius())
-	// 						mostDangerous = projectileIt;  // dart is the littlest, fireball is the biggest
-	// 				}
-	// 
-	// 				if (mostDangerous != projectiles.end())
-	// 				{
-	// 					//Vec2d evasion = { -10, -10 };
-	// 					move.setSpeed(-10);
-	// 					move.setStrafeSpeed(-10);
-	// 				}
-	// 			}
-	
 	return true;
 }
 
