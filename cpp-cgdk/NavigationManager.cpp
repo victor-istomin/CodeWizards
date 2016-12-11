@@ -1,4 +1,4 @@
-#include "NavigationManager.h"
+﻿#include "NavigationManager.h"
 #include "MyStrategy.h"
 #include "DebugVisualizer.h"
 #include "MapsManager.h"
@@ -36,7 +36,8 @@ void NavigationManager::makeMove(model::Move& move)
 		&NavigationManager::stageGuardBase,
 		&NavigationManager::stagePursuit,
 		&NavigationManager::stageBonus,
-		&NavigationManager::stageRetreat,    // 'stageBonus' placed before because it's responsible of retreating to bonus
+		&NavigationManager::stageSwitchLane,  // switch lane assumes that there is no need to guard base and goes through the MID
+		&NavigationManager::stageRetreat,     // 'stageBonus' placed before because it's responsible of retreating to bonus
 		&NavigationManager::stageInCombat,
 		&NavigationManager::stagePushLine,
 	};
@@ -484,6 +485,39 @@ bool NavigationManager::stageGuardBase(model::Move& move)
 	}
 
 	return false; // already here
+}
+
+bool NavigationManager::stageSwitchLane(model::Move& move)
+{
+	const model::Wizard&          self        = m_state.m_self;
+	const State::WizardStatsList& wizardLanes = m_state.m_wizardLanes;
+
+	model::LaneType currentLane = std::find_if(wizardLanes.begin(), wizardLanes.end(), [&self](const auto& wl) {return wl.m_id == self.getId(); })->m_lane;
+	model::LaneType desiredLane = m_strategy.getSuggestedLaneType();
+
+	if (currentLane == model::_LANE_UNKNOWN_ || desiredLane == model::_LANE_UNKNOWN_ || currentLane == desiredLane)
+		return false;  // nothing to change
+
+	const model::World& world = m_state.m_world;
+	const Point2D switchPoint{ world.getWidth() / 2 - 200, world.getHeight() / 2 + 200 };  // move to center, otherwise my waypoints management became crazy
+	const Point2D basePoint{ 400, world.getHeight() - 400 };                               // ... or through base, if closer
+
+	static model::LaneType switchedLane = model::_LANE_UNKNOWN_;       // TODO - remove static hack!
+	if (switchedLane != desiredLane 
+		&& (switchPoint.getDistanceTo(self) < MyStrategy::WAYPOINT_RADIUS || basePoint.getDistanceTo(self) < m_state.m_game.getFactionBaseVisionRange()))
+	{
+		// assume switched
+		switchedLane = desiredLane;
+		return false; 
+	}
+
+	if (switchedLane == desiredLane)
+	{
+		return false;
+	}
+
+	bool shoudAimEnemy = !m_state.m_dangerousEnemies.empty();
+	return goTo(switchPoint, move, shoudAimEnemy);
 }
 
 bool NavigationManager::goTo(const Point2D& point, model::Move& move, bool preserveAngle /*= false*/, bool usePathfinding /*= true*/)

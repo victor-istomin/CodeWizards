@@ -108,6 +108,7 @@ public:
 	const TWaypoints& getWaypoints(model::LaneType lane) const { return g_waypointsMap[lane]; }
 
 	void suggestLaneType(model::LaneType lane) const;  // TODO!!!
+	model::LaneType getSuggestedLaneType() const { return m_laneType; }
 	int getTimeToChooseLane() const;
 
 	MapsManager& getMaps() const { return *m_maps; }
