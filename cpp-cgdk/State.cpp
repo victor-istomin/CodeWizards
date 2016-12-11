@@ -151,12 +151,14 @@ void State::updateWizardLanes()
 {
 	typedef std::vector<Point2D> PointsVector;
 
+	const Point2D basePoint{ 400, m_world.getHeight() - 400 };
+
 	m_wizardLanes.clear();
 	for (const model::Wizard& wizard : m_world.getWizards())
 	{
 		m_wizardLanes.emplace_back(wizard, m_self.getFaction());
 
-		if (m_world.getTickIndex() < m_strategy->getTimeToChooseLane())
+		if (m_world.getTickIndex() < m_strategy->getTimeToChooseLane() || basePoint.getDistanceTo(wizard) < m_game.getFactionBaseVisionRange())
 			continue;  // let teammates choose lane
 
 		double          minLaneDistance = std::numeric_limits<double>::infinity();
