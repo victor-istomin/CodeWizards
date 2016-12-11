@@ -365,22 +365,24 @@ bool NavigationManager::stageInCombat(model::Move& move)
 	std::sort(nearEnemies.begin(), nearEnemies.end(), [&self](const auto* a, const auto* b) { return a->getDistanceTo(self) < b->getDistanceTo(self); });
 	for (const model::LivingUnit* target : nearEnemies)
 	{
-		const double shootingDistance = self.getCastRange();
-
-		double enemyAngle      = target->getAngleTo(self);
-		double desiredDistance = shootingDistance;
-		double actualDistance  = self.getDistanceTo(*target);
-
-		double maxDangerousAngle = PI / 2;
-		if (MyStrategy::getWizard(target) != nullptr && std::abs(enemyAngle) > maxDangerousAngle)
-			continue;
-
 		int cooldownTicks = std::min(
 		{
 			m_state.m_cooldownTicks[model::ACTION_MAGIC_MISSILE],
 			m_state.m_cooldownTicks[model::ACTION_FROST_BOLT],
 			m_state.m_cooldownTicks[model::ACTION_FIREBALL]
 		});
+
+		const model::Wizard* targetWizard = MyStrategy::getWizard(target);
+		const double shootingDifference = targetWizard ? targetWizard->getCastRange() - self.getCastRange() + 1 : 1;
+		const double shootingDistance = cooldownTicks < 5 ? self.getCastRange() : self.getCastRange() + shootingDifference;
+
+		double enemyAngle = target->getAngleTo(self);
+		double desiredDistance = shootingDistance;
+		double actualDistance = self.getDistanceTo(*target);
+
+		double maxDangerousAngle = PI / 2;
+		if (MyStrategy::getWizard(target) != nullptr && std::abs(enemyAngle) > maxDangerousAngle)
+			continue;
 
 		desiredDistance += cooldownTicks * game.getWizardStrafeSpeed();
 

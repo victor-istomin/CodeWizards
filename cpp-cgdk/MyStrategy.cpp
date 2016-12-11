@@ -640,7 +640,7 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 		double betweenEnemiesHp = std::accumulate(enemiesAround.begin(), enemiesAround.end(), 0.0,
 			[&isEnemyInBetweenPredicate](double summ, const model::LivingUnit* enemy) { return summ + (isEnemyInBetweenPredicate(enemy) ? enemy->getLife() : 0.0); });
 
-		if (self.getLife() < betweenEnemiesHp)
+		if (m_state->m_estimatedHP < betweenEnemiesHp)
 			continue;  // "do it or die" is not too reasonable
 
 		double currentDistance = getPathLength(spawn.m_smoothPathCache) + spawn.m_dangerHandicap;
