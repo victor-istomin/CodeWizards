@@ -203,7 +203,7 @@ void State::updateProjectiles()
 		auto foundIt = std::find(m_projectileInfos.begin(), m_projectileInfos.end(), newProjectile);
 		if (foundIt == m_projectileInfos.end() && newProjectile.getType() != model::PROJECTILE_DART)  // don't track dart - it's too fast
 		{
-			bool flightBonus = newProjectile.getType() == model::PROJECTILE_FIREBALL ? m_game.getFireballExplosionMinDamageRange() : 0;
+			double flightBonus = newProjectile.getType() == model::PROJECTILE_FIREBALL ? m_game.getFireballExplosionMinDamageRange() : 0;
 
 			m_projectileInfos.emplace_back(newProjectile, m_world.getTickIndex(), m_game.getWizardCastRange() + flightBonus);
 			const model::Wizard* owner = getUnit<model::Wizard>(newProjectile.getOwnerUnitId());
