@@ -52,8 +52,11 @@ State::State(const MyStrategy* strategy, const model::Wizard& self, const model:
 	auto statuses = m_self.getStatuses();
 	m_isHastened = statuses.end() != std::find_if(statuses.begin(), statuses.end(), [](const model::Status& s) { return s.getType() == model::STATUS_HASTENED; });
 
-	// todo: take into account all missiles
-	m_estimatedHP -= 0; // TODO - not yet ready     //m_isUnderMissile ? game.getMagicMissileDirectDamage() : 0;
+	// todo: carefully take into account all missiles
+	int burning = std::count_if(statuses.begin(), statuses.end(), [](const model::Status& s) { return s.getType() == model::STATUS_BURNING; });
+	m_estimatedHP -= burning * m_game.getBurningSummaryDamage() / 2;
+	m_estimatedHP -= m_dangerousProjectiles.size() * game.getMagicMissileDirectDamage();
+
 	m_isLowHP = m_estimatedHP <= std::max<double>(self.getMaxLife() * State::LOW_HP_FACTOR, game.getGuardianTowerDamage());
 }
 
