@@ -325,6 +325,8 @@ void MyStrategy::considerAnotherLane()
 	Stats* selfLane = nullptr;
 	model::LaneType selfLaneType = model::_LANE_UNKNOWN_;
 
+	int teammatesJustRespawn = 0;
+
 	for (const State::WizardStats& wizard : m_state->m_wizardLanes)
 	{
 		Stats& laneStat    = byLane[wizard.m_lane];
@@ -339,10 +341,13 @@ void MyStrategy::considerAnotherLane()
 			selfLane     = &laneStat;
 			selfLaneType = wizard.m_lane;
 		}
+
+		if (wizard.m_lane == model::_LANE_UNKNOWN_ && wizard.m_isTeammate)
+			++teammatesJustRespawn;
 	}
 
 	if (selfLane->teammatesCount == 1)
-		return;  // don't leave lave un-guarded
+		return;  // don't leave lane un-guarded
 
 	if (overall.teammatesCount < 5)
 		return; // hope that teammate fix situation after re-spawn
@@ -358,7 +363,8 @@ void MyStrategy::considerAnotherLane()
 		if (laneType != model::LANE_BOTTOM && laneType != model::LANE_MIDDLE && laneType != model::LANE_TOP)
 			continue;  // not a lane
 
-		if (laneStats.teammatesCount == 0)
+		if (laneStats.teammatesCount == 0 
+			&& (teammatesJustRespawn == 0 || teammatesJustRespawn < laneStats.enemiesCount))
 		{
 			isEmptyLane = true;
 			lessDefend = laneType;
