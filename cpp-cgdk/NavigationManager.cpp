@@ -412,7 +412,8 @@ bool NavigationManager::stageInCombat(model::Move& move)
 				return Map::isSectionIntersects(self, newPosition, *unit, self.getRadius() + unit->getRadius() + 1);
 			});
 
-			if (!path.empty() && (isDestinationOccupied || std::abs(Vec2d::angleBetween(Vec2d::fromPoint(path.front() - selfPoint), direction) < PI / 2)))
+			if (!path.empty() 
+				&& (isDestinationOccupied || std::abs(Vec2d::angleBetween(Vec2d::fromPoint(path.front() - selfPoint), direction)) < PI / 2))
 			{
 				newPosition = path.front();
 			}
