@@ -178,6 +178,11 @@ public:
 		return isIntersects;
 	}
 
+	size_t tileToInt(const TileIndex& tile) const
+	{
+		return tile.m_x * m_tilesYX.size() + tile.m_y;
+	}
+
 private:
 	TilesMatrix m_tilesYX;
 	size_t      m_tileSize;

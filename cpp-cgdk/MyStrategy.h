@@ -43,7 +43,10 @@ public:
 	typedef std::vector<Point2D>      TWaypoints;
 	typedef std::map<model::LaneType, TWaypoints> TWaypointsMap;
 
-	static const std::vector<model::SkillType> SKILLS_TO_LEARN;
+	static const std::vector<model::SkillType>  SKILLS_TO_LEARN_PRI;
+	static const std::vector<model::SkillType>  SKILLS_TO_LEARN_ALT;
+	static const std::vector<model::SkillType>* SKILLS_TO_LEARN;
+
 
 	static const double WAYPOINT_RADIUS;
 	static Point2D      TOP_GUARD_POINT;
@@ -97,6 +100,9 @@ public:
 	bool considerRetreat(model::Move& move, DebugMessage& debugMessage);
 	bool considerAttack (model::Move &move, bool isRetreating, DebugMessage& debugMessage);
 	void considerAnotherLane();
+	void considerShield(model::Move& move);
+
+	void castSpell(model::Move &move, model::ActionType spell, bool forceCast = false) const;
 
 	double getSafeDistance(const model::Unit& enemy) const;
 

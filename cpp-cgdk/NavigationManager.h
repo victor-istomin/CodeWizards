@@ -30,6 +30,8 @@ public:
 
 	Map::PointPath getSmoothPathTo(const Point2D& point, PathFinder::TilesPath& tiles);
 
+	long long getTeammateIdToHelp() const;
+	void setTurnTo(int teammateToHelp) { m_teammateToHelp = teammateToHelp; }
 
 private:
 	typedef std::vector<const model::LivingUnit*> LivingUnits;
@@ -47,6 +49,7 @@ private:
 	bool               m_isRetreating;
 	bool               m_forcePreserveAngle;
 	bool               m_isInCombat;
+	long long          m_teammateToHelp;
 
 
 	bool stageAvoidProjectiles(model::Move& move);
@@ -57,6 +60,7 @@ private:
 	bool stageInCombat(model::Move& move); // in-combat moving, except retreating
 	bool stageGuardBase(model::Move& move);
 	bool stageSwitchLane(model::Move& move);
+	bool stageTurnToTeammate(model::Move& move);
 
 	bool goTo(const Point2D& point, model::Move& move, bool preserveAngle = false, bool usePathfinding = true);
 	bool isPathAcceptable(const Vec2d& moveVector, const Map::PointPath& smoothPath);
@@ -64,12 +68,9 @@ private:
 	Vec2d getAlternateMoveVector(const Vec2d& suggestion);
 
 	Point2D getNextWaypoint();
-
 	size_t GetCurrentWaypointIndex();
-
 	Point2D getPreviousWaypoint();
 
-	long long getTeammateIdToHelp() const;
 
 	struct Limits
 	{

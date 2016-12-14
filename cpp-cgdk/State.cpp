@@ -62,8 +62,8 @@ State::State(const MyStrategy* strategy, const model::Wizard& self, const model:
 
 void State::updateSkillsAndActions()
 {
-	int learnedCount = std::min<int>(m_self.getLevel(), MyStrategy::SKILLS_TO_LEARN.size());
-	std::copy_n(std::begin(MyStrategy::SKILLS_TO_LEARN), learnedCount, std::back_inserter(m_learnedSkills));
+	int learnedCount = std::min<int>(m_self.getLevel(), MyStrategy::SKILLS_TO_LEARN->size());
+	std::copy_n(std::begin(*MyStrategy::SKILLS_TO_LEARN), learnedCount, std::back_inserter(m_learnedSkills));
 
 	// set cooldown ticks, taking into account both specific and common cooldown
 	std::copy(m_self.getRemainingCooldownTicksByAction().begin(), m_self.getRemainingCooldownTicksByAction().end(), m_cooldownTicks.begin());
@@ -353,8 +353,12 @@ void State::updateBonuses()
 		// 				spawn.m_wizardsHp.enemies += wizard.getLife();
 		// 		}
 
-		spawn.m_smoothPathCache.clear();
-		spawn.m_tilesPathCache.clear();
+		static const int THROTTLE_FACTOR = 4;
+		if ((m_world.getTickIndex() % THROTTLE_FACTOR) == 0)
+		{
+			spawn.m_smoothPathCache.clear();
+			spawn.m_tilesPathCache.clear();
+		}
 	}
 
 	if (lastBonusSpawnTick() == 0)

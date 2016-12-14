@@ -34,12 +34,22 @@ const Point2D BonusSpawn::RESPAWN_POINTS[] = { Point2D(4000 * 0.3, 4000 * 0.3), 
 const double  BonusSpawn::DANGER_HANDICAP = 500;
 
 // currently, these skill branches only
-const std::vector<model::SkillType> MyStrategy::SKILLS_TO_LEARN =
+const std::vector<model::SkillType> MyStrategy::SKILLS_TO_LEARN_PRI =
 { 
 	/* MR damage and frost-bolt */ SKILL_MAGICAL_DAMAGE_BONUS_PASSIVE_1, SKILL_MAGICAL_DAMAGE_BONUS_AURA_1, SKILL_MAGICAL_DAMAGE_BONUS_PASSIVE_2, SKILL_MAGICAL_DAMAGE_BONUS_AURA_2, SKILL_FROST_BOLT,
 	/* haste */ SKILL_MOVEMENT_BONUS_FACTOR_PASSIVE_1, SKILL_MOVEMENT_BONUS_FACTOR_AURA_1, SKILL_MOVEMENT_BONUS_FACTOR_PASSIVE_2, SKILL_MOVEMENT_BONUS_FACTOR_AURA_2, SKILL_HASTE,
 	/* range */SKILL_RANGE_BONUS_PASSIVE_1, SKILL_RANGE_BONUS_AURA_1, SKILL_RANGE_BONUS_PASSIVE_2, SKILL_RANGE_BONUS_AURA_2, SKILL_ADVANCED_MAGIC_MISSILE 
 };
+
+const std::vector<model::SkillType> MyStrategy::SKILLS_TO_LEARN_ALT =
+{
+	/* MR damage and frost-bolt */ SKILL_MAGICAL_DAMAGE_BONUS_PASSIVE_1, SKILL_MAGICAL_DAMAGE_BONUS_AURA_1, SKILL_MAGICAL_DAMAGE_BONUS_PASSIVE_2, SKILL_MAGICAL_DAMAGE_BONUS_AURA_2, SKILL_FROST_BOLT,
+	/* shield */ SKILL_MAGICAL_DAMAGE_ABSORPTION_PASSIVE_1, SKILL_MAGICAL_DAMAGE_ABSORPTION_AURA_1, SKILL_MAGICAL_DAMAGE_ABSORPTION_PASSIVE_2, SKILL_MAGICAL_DAMAGE_ABSORPTION_AURA_2, SKILL_SHIELD,
+	/* range */SKILL_RANGE_BONUS_PASSIVE_1, SKILL_RANGE_BONUS_AURA_1, SKILL_RANGE_BONUS_PASSIVE_2, SKILL_RANGE_BONUS_AURA_2, SKILL_ADVANCED_MAGIC_MISSILE
+};
+
+const std::vector<model::SkillType>* MyStrategy::SKILLS_TO_LEARN = nullptr;
+
 
 // TODO - remove this from globals!
 MyStrategy::TWaypointsMap MyStrategy::g_waypointsMap;
@@ -80,7 +90,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 
 	considerAnotherLane();
 	bool isRetreating = considerRetreat(move, debugMessage);
-
+	considerShield(move);
 	considerAttack(move, isRetreating, debugMessage);
 	m_navigation->makeMove(move);
 }
@@ -382,6 +392,44 @@ void MyStrategy::considerAnotherLane()
 	}
 }
 
+void MyStrategy::considerShield(model::Move& move)
+{
+	if (!m_state->isReadyForAction(model::ACTION_SHIELD))
+		return;
+
+	const auto& enemies = m_state->m_dangerousEnemies;
+	bool isWizardThreatening = enemies.end() != std::find_if(enemies.begin(), enemies.end(), [](const auto* unit) {return getWizard(unit) != nullptr; });
+	if (!isWizardThreatening && !m_state->m_isLowHP && !m_state->isUnderMissile())
+		return;
+
+	castSpell(move, model::ACTION_SHIELD);
+}
+
+void MyStrategy::castSpell(model::Move &move, model::ActionType spell, bool forceCast /*= false*/) const
+{
+	const model::Wizard& self = m_state->m_self;
+
+	long long            teammateId = m_navigation->getTeammateIdToHelp();
+	const model::Wizard* teammate = m_state->getUnit<model::Wizard>(teammateId);
+	double               angle = (teammateId == self.getId() || teammate == nullptr) ? 0 : self.getAngleTo(*teammate);
+
+	if (std::abs(angle) < m_state->m_game.getStaffSector() / 2.0)
+	{
+		// this action might be overwritten by shooting actions. It's ok, because shooting has higher priority
+		move.setAction(spell);
+		move.setStatusTargetId(teammateId);
+	}
+	else if (forceCast)
+	{
+		// this action might be overwritten by shooting actions. It's ok, because shooting has higher priority
+		move.setAction(spell); // cast to myself
+	}
+	else
+	{
+		m_navigation->setTurnTo(teammateId);
+	}
+}
+
 int MyStrategy::getTimeToChooseLane() const
 {
 	return m_game->getFactionMinionAppearanceIntervalTicks() / 2;
@@ -473,6 +521,9 @@ void MyStrategy::initialSetup()
 
 void MyStrategy::initState(const model::Wizard& self, const model::World& world, const model::Game& game, model::Move& move, DebugMessage& debugMessage)
 {
+	if (SKILLS_TO_LEARN == nullptr)
+		SKILLS_TO_LEARN = self.getId() % 2 ? &SKILLS_TO_LEARN_ALT : &SKILLS_TO_LEARN_PRI;
+
 	m_game = &game;
 
 	m_state = std::make_unique<State>(this, self, world, game, move, m_oldState);
@@ -634,7 +685,9 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 		if (spawn.m_point.getDistanceTo(self) > MAX_TRAVEL_DISTANCE)
 			continue;  // path can't be shorter than straight line
 
-		spawn.m_smoothPathCache = m_navigation->getSmoothPathTo(spawn.m_point, spawn.m_tilesPathCache);
+		if (spawn.m_smoothPathCache.empty())
+			spawn.m_smoothPathCache = m_navigation->getSmoothPathTo(spawn.m_point, spawn.m_tilesPathCache);
+
 		const Point2D nextStepPoint = spawn.m_smoothPathCache.empty() ? spawn.m_point : spawn.m_smoothPathCache.front();
 
 		auto isEnemyInBetweenPredicate = [&self, &nextStepPoint](const model::LivingUnit* enemy)
@@ -688,148 +741,6 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 
 	return nullptr;
 }
-
-// void MyStrategy::goTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage)
-// {
-// 	Timer timer(__FUNCTION__);
-// 
-// 	Point2D target = point;
-// 
-// 	PathFinder::TilesPath path;
-// 	const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
-// 	Map::PointPath smoothPath; 
-// 	
-// 	if (m_reasonableBonus != nullptr && m_reasonableBonus->m_point == point)
-// 	{
-// 		smoothPath = m_reasonableBonus->m_smoothPathCache;
-// 		path = m_reasonableBonus->m_tilesPathCache;
-// 
-// 		if (!m_state->m_isHastened && m_state->isReadyForAction(ACTION_HASTE))
-// 		{
-// 			move.setAction(ACTION_HASTE);
-// 			move.setStatusTargetId(m_state->m_self.getId());
-// 		}
-// 	}
-// 	else
-// 	{
-// 		smoothPath = getSmoothPathTo(target, map, path);
-// 	}
-// 
-// 	debugMessage.setNextWaypoint(point);
-// 	debugMessage.visualizePath(path, map);
-// 
-// 	// this may occur when navigating to the enemy in occupied cell
-// 	//assert(!smoothPath.empty());
-// 	if (!smoothPath.empty())
-// 	{
-// 		target = smoothPath.front();
-// 	}
-// 	
-// 	double angle = m_state->m_self.getAngleTo(target.m_x, target.m_y);
-// 
-// 	move.setTurn(angle);
-// 
-// 	double forwardSpeed = m_state->m_game.getWizardForwardSpeed();
-// 	if (m_state->m_isHastened)
-// 		forwardSpeed += forwardSpeed * m_state->m_game.getHastenedMovementBonusFactor();
-// 
-// 	if (abs(angle) < m_state->m_game.getStaffSector() / 4.0)
-// 	{
-// 		Vec2d vect = Vec2d(forwardSpeed * std::cos(angle), forwardSpeed * std::sin(angle));
-// 		Vec2d alt = getAlternateMoveVector(vect);
-// 		move.setSpeed(alt.m_x);
-// 		move.setStrafeSpeed(alt.m_y);
-// 	}
-// 	else
-// 	{
-// 		double angleTo = m_state->m_self.getAngleTo(target.m_x, target.m_y);
-// 		Vec2d vect = Vec2d(forwardSpeed * std::cos(angleTo), forwardSpeed * std::sin(angleTo));
-// 
-// 		Vec2d alt = getAlternateMoveVector(vect);
-// 		move.setSpeed(alt.m_x);
-// 		move.setStrafeSpeed(alt.m_y);
-// 	}
-// 
-// 	tryDisengage(move);
-// }
-
-// void MyStrategy::retreatTo(const Point2D& point, model::Move& move, DebugMessage& debugMessage)
-// {
-// 	bool isToBonus = m_reasonableBonus != nullptr && m_reasonableBonus->m_point == point;
-// 
-// 	if (m_state->m_isLowHP)
-// 	{
-// 		const model::Wizard& self  = m_state->m_self;
-// 		const model::World& world = m_state->m_world;
-// 
-// 		const model::Unit* enemy = nullptr;
-// 		auto findNearestEnemy = [&self, &world, &enemy, this](const model::Unit& unit) 
-// 		{
-// 			if (unit.getFaction() == self.getFaction())  
-// 				return;
-// 
-// 			if (enemy == nullptr)
-// 			{
-// 				enemy = &unit;
-// 			}
-// 			else
-// 			{
-// 				double safeGap    = self.getDistanceTo(unit) - getSafeDistance(unit);
-// 				double oldSafeGap = self.getDistanceTo(*enemy) - getSafeDistance(*enemy);
-// 
-// 				if (safeGap < oldSafeGap)
-// 					enemy = &unit;
-// 			}
-// 		};
-// 
-// 		std::for_each(world.getWizards().begin(), world.getWizards().end(),     findNearestEnemy);
-// 		std::for_each(world.getMinions().begin(), world.getMinions().end(),     findNearestEnemy);
-// 		std::for_each(world.getBuildings().begin(), world.getBuildings().end(), findNearestEnemy);
-// 
-// 		if (m_state->m_nextMinionRespawnTick - world.getTickIndex() < 100)
-// 			std::for_each(m_state->m_enemySpawnPredictions.begin(), m_state->m_enemySpawnPredictions.end(), findNearestEnemy);
-// 
-// 		bool isAlreadySafe = enemy == nullptr || enemy->getDistanceTo(self) > getSafeDistance(*enemy);
-// 		if (isAlreadySafe && !isToBonus)
-// 			return;  // don't retreat too far, except getting a bonus
-// 	}
-// 
-// 	if (!m_state->m_isHastened && m_state->isReadyForAction(ACTION_HASTE) && m_state->m_self.getLife() != m_state->m_self.getMaxLife())
-// 	{
-// 		move.setAction(ACTION_HASTE);
-// 		move.setStatusTargetId(m_state->m_self.getId());
-// 	}
-// 
-// 	double forwardAngle = m_state->m_self.getAngleTo(point.m_x, point.m_y);
-// 	double angle = (forwardAngle < 0 ? 2*PI - forwardAngle : forwardAngle) - PI;
-// 
-// 	Point2D target = point;
-// 
-// 	PathFinder::TilesPath tiles;
-// 	const Map* map = m_maps->getMap(MapsManager::MT_WORLD_MAP);
-// 	Map::PointPath smoothPath = getSmoothPathTo(point, map, tiles);
-// 
-// 	debugMessage.visualizePath(tiles, map);
-// 
-// 	//assert(!smoothPath.empty());
-// 	if (!smoothPath.empty())
-// 	{
-// 		target = smoothPath.front();
-// 	}
-// 
-// 	double speed = m_state->m_game.getWizardForwardSpeed();
-// 	if (m_state->m_isHastened)
-// 		speed += speed * m_state->m_game.getHastenedMovementBonusFactor();
-// 
-// 	double angleTo = m_state->m_self.getAngleTo(target.m_x, target.m_y);
-// 	Vec2d vect = Vec2d(speed * std::cos(angleTo), speed * std::sin(angleTo));
-// 
-// 	Vec2d alt = getAlternateMoveVector(vect);
-// 	move.setSpeed(alt.m_x);
-// 	move.setStrafeSpeed(alt.m_y);
-// 
-// 	tryDisengage(move);
-// }
 
 double MyStrategy::getPathLength(const Map::PointPath& path) const
 {
@@ -928,18 +839,18 @@ void MyStrategy::suggestLaneType(model::LaneType lane) const
 void MyStrategy::learnSkill(model::Move& move)
 {
 	const int level  = m_state->m_self.getLevel();
-	const int skillsTotal = SKILLS_TO_LEARN.size();
+	const int skillsTotal = SKILLS_TO_LEARN->size();
 
 	int nextSkill = level - 1;
 	if (nextSkill > 0 && int(m_state->m_self.getSkills().size()) < nextSkill)
 	{
 		// for case when got 2 levelups at once
 		int previousSkill = std::max(0, nextSkill - 1);
-		move.setSkillToLearn(SKILLS_TO_LEARN[previousSkill]);
+		move.setSkillToLearn((*SKILLS_TO_LEARN)[previousSkill]);
 	}
 	else if (nextSkill >= 0 && nextSkill < skillsTotal)
 	{
-		move.setSkillToLearn(SKILLS_TO_LEARN[nextSkill]);
+		move.setSkillToLearn((*SKILLS_TO_LEARN)[nextSkill]);
 	}
 }
 

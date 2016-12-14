@@ -23,6 +23,7 @@ NavigationManager::NavigationManager(const MyStrategy& strategy, const State& st
 	, m_isRetreating(false)
 	, m_forcePreserveAngle(false)
 	, m_isInCombat(false)
+	, m_teammateToHelp(0)
 {
 
 }
@@ -33,6 +34,7 @@ void NavigationManager::makeMove(model::Move& move)
 	StageFunc stages[] = 
 	{ 
 		&NavigationManager::stageAvoidProjectiles,
+		&NavigationManager::stageTurnToTeammate,
 		&NavigationManager::stageGuardBase,
 		&NavigationManager::stagePursuit,
 		&NavigationManager::stageBonus,
@@ -85,16 +87,14 @@ bool NavigationManager::stageAvoidProjectiles(model::Move& move)
 		double eta      = std::floor(distance / projectileInfo->m_speed.length());
 
 		// TODO: some missiles may be avoided by just walking back
-//		double possibleBackStep
-// 
+
 		double possibleDisposition = eta * speedLimit.strafe;
 		if (possibleDisposition > self.getRadius() || projectileInfo->m_avoidance != ProjectileInfo::AVOIDANCE_NONE)
 		{
 			bool isUltimateProjectile = projectile->getType() == model::PROJECTILE_FROST_BOLT || projectile->getType() == model::PROJECTILE_FIREBALL;
 			if (!m_state.m_isHastened && m_state.isReadyForAction(model::ACTION_HASTE) && isUltimateProjectile)
 			{
-				move.setAction(model::ACTION_HASTE);
-				move.setStatusTargetId(getTeammateIdToHelp());
+				m_strategy.castSpell(move, model::ACTION_HASTE, true/*force*/);
 			}
 
 			Vec2d arriveDirection = projectileInfo->m_speed;
@@ -296,8 +296,7 @@ bool NavigationManager::stageRetreat(model::Move& move)
 
 	if (!m_state.m_isHastened && m_state.isReadyForAction(model::ACTION_HASTE) && self.getLife() != self.getMaxLife())
 	{
-		move.setAction(model::ACTION_HASTE);
-		move.setStatusTargetId(getTeammateIdToHelp());
+		m_strategy.castSpell(move, model::ACTION_HASTE);
 	}
 
 	Point2D previousWaypoint = getPreviousWaypoint();
@@ -466,8 +465,7 @@ bool NavigationManager::stageGuardBase(model::Move& move)
 	{
 		if (!m_state.m_isHastened && m_state.isReadyForAction(model::ACTION_HASTE))
 		{
-			move.setAction(model::ACTION_HASTE);
-			move.setStatusTargetId(getTeammateIdToHelp());
+			m_strategy.castSpell(move, model::ACTION_HASTE);
 		}
 	}
 
@@ -520,6 +518,36 @@ bool NavigationManager::stageSwitchLane(model::Move& move)
 	return goTo(switchPoint, move, shoudAimEnemy);
 }
 
+bool NavigationManager::stageTurnToTeammate(model::Move& move)
+{
+	if (m_teammateToHelp == 0)
+		return false;
+
+	const model::Wizard* teammate = m_state.getUnit<model::Wizard>(m_teammateToHelp);
+	if (teammate == nullptr)
+		return false;
+
+	const model::Wizard& self = m_state.m_self;
+
+	double angleTo = self.getAngleTo(*teammate);
+	bool shouldStepBack = std::abs(angleTo) > PI / 3;
+
+	bool isMoveChanged = false;
+
+	move.setTurn(angleTo);
+	m_forcePreserveAngle = true;  // preserve this angle
+
+	if (shouldStepBack)
+	{
+		double distanceTo = self.getDistanceTo(*teammate) + 2/*some gap*/ * teammate->getRadius();
+
+		Point2D destination = Point2D(self) +(Vec2d::truncate(distanceTo, std::cos(angleTo), std::sin(angleTo))).toPoint<Point2D>();
+		isMoveChanged = goTo(destination, move, true/*preserve aim*/, false/*near move, no pf*/);
+	}
+
+	return isMoveChanged;
+}
+
 bool NavigationManager::goTo(const Point2D& point, model::Move& move, bool preserveAngle /*= false*/, bool usePathfinding /*= true*/)
 {
 	Timer timer(__FUNCTION__);
@@ -545,9 +573,7 @@ bool NavigationManager::goTo(const Point2D& point, model::Move& move, bool prese
 
 			if (!m_state.m_isHastened && m_state.isReadyForAction(model::ACTION_HASTE))
 			{
-				// TODO - don't burl all mana for haste?
-				move.setAction(model::ACTION_HASTE);
-				move.setStatusTargetId(getTeammateIdToHelp());
+				m_strategy.castSpell(move, model::ACTION_HASTE);
 			}
 		}
 		else
@@ -835,13 +861,15 @@ long long NavigationManager::getTeammateIdToHelp() const
 {
 	const auto& self = m_state.m_self;
 
-	auto teammatesAround = filterPointers<const model::Wizard*>(
-		[&self](const model::Wizard& w) { return w.getId() != self.getId() && w.getFaction() == self.getFaction() && self.getDistanceTo(w) < self.getCastRange(); },
-		m_state.m_world.getWizards());
+	auto teammatesNear = filterPointers<const model::Wizard*>([&self](const model::Wizard& w) 
+	{ 
+		return w.getId() != self.getId() 
+		    && w.getFaction() == self.getFaction() 
+		    && self.getDistanceTo(w) < w.getCastRange(); 
+	}, m_state.m_world.getWizards());
 
-	std::sort(teammatesAround.begin(), teammatesAround.end(), [](const auto* a, const auto* b) {return a->getLife() < b->getLife(); });
-
-	return teammatesAround.empty() ? self.getId() : teammatesAround.front()->getId();
+	std::sort(teammatesNear.begin(), teammatesNear.end(), [&self](const auto* a, const auto* b) {return self.getAngleTo(*a) < self.getAngleTo(*b);});
+	return teammatesNear.empty() ? self.getId() : teammatesNear.front()->getId();
 }
 
 NavigationManager::Limits NavigationManager::getMaxSpeed(const model::Wizard* wizard)

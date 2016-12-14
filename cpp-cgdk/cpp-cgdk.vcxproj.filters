@@ -275,5 +275,8 @@
     <ClInclude Include="NavigationManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="BitmapSet.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

@@ -141,7 +141,7 @@
       <PreprocessorDefinitions>_WINSOCK_DEPRECATED_NO_WARNINGS;WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
-      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <Optimization>Disabled</Optimization>
     </ClCompile>
     <Link>
@@ -266,6 +266,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\russian-ai-cup-visual\clients\cpp\Debug.h" />
+    <ClInclude Include="BitmapSet.h" />
     <ClInclude Include="BonusSpawn.h" />
     <ClInclude Include="csimplesocket\ActiveSocket.h" />
     <ClInclude Include="csimplesocket\Host.h" />
