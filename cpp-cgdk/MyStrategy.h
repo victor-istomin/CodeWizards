@@ -119,6 +119,8 @@ public:
 
 	MapsManager& getMaps() const { return *m_maps; }
 
+	bool isMode5x2() const { return m_game->isRawMessagesEnabled(); }
+
 
 	static auto getWizard(const model::Unit* unit)    { return dynamic_cast<const model::Wizard*>(unit); }
 	static auto getMinion(const model::Unit* unit)    { return dynamic_cast<const model::Minion*>(unit); }

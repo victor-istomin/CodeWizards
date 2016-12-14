@@ -828,6 +828,9 @@ double MyStrategy::getMaxDamage(const model::Unit* u) const
 
 void MyStrategy::suggestLaneType(model::LaneType lane) const
 {
+	if (isMode5x2() && (m_state->m_self.getId() % 2) == 1)
+		return;   // workaround to don't let all bots rush single lane 
+
 	static int lastChange = 0;
 	if (m_state->m_world.getTickIndex() - lastChange > getTimeToChooseLane())
 	{
