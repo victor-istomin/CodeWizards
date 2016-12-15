@@ -40,7 +40,7 @@ void NavigationManager::makeMove(model::Move& move)
 		&NavigationManager::stageBonus,
 		&NavigationManager::stageSwitchLane,  // switch lane assumes that there is no need to guard base and goes through the MID
 		&NavigationManager::stageRetreat,     // 'stageBonus' placed before because it's responsible of retreating to bonus
-		&NavigationManager::stageInCombat,
+		&NavigationManager::stageInCombat,    // 'in combat' stage assumes that orks are already handled by 'Retreat' stage
 		&NavigationManager::stagePushLine,
 	};
 
@@ -352,18 +352,25 @@ bool NavigationManager::stageInCombat(model::Move& move)
 	const auto& self  = m_state.m_self;
 	const auto& world = m_state.m_world;
 
-	auto nearEnemies = filterPointers<const model::LivingUnit*>(
-		[&self](const model::LivingUnit& u) { return MyStrategy::isEnemy(u, self) && u.getDistanceTo(self) < self.getVisionRange(); },
-		world.getWizards(), world.getBuildings());
+	auto isEnemyNear = [&self](const model::LivingUnit& u) 
+	{
+		const model::Wizard* wizard = MyStrategy::getWizard(&u);
+		double distanceTo = u.getDistanceTo(self); 
+		double range      = wizard != nullptr ? std::max(wizard->getCastRange(), wizard->getVisionRange()) : self.getVisionRange();
 
-	if (nearEnemies.empty())
+		return MyStrategy::isEnemy(u, self) && distanceTo < range;
+	};
+
+	auto nearWizardsAndBuildings = filterPointers<const model::LivingUnit*>(isEnemyNear, world.getWizards(), world.getBuildings());
+	if (nearWizardsAndBuildings.empty())
 		return false;
 
 	bool isMoveChanged = false;
 
 	// walk back from enemies if enemy is too near
-	std::sort(nearEnemies.begin(), nearEnemies.end(), [&self](const auto* a, const auto* b) { return a->getDistanceTo(self) < b->getDistanceTo(self); });
-	for (const model::LivingUnit* target : nearEnemies)
+	auto sortByDistance = [&self](const auto* a, const auto* b) { return a->getDistanceTo(self) < b->getDistanceTo(self); };
+	std::sort(nearWizardsAndBuildings.begin(), nearWizardsAndBuildings.end(), sortByDistance);
+	for (const model::LivingUnit* target : nearWizardsAndBuildings)
 	{
 		int cooldownTicks = std::min(
 		{
@@ -424,7 +431,23 @@ bool NavigationManager::stageInCombat(model::Move& move)
 				break;
 			}
 		}
+	}
 
+	auto nearEnemies = filterPointers<const model::LivingUnit*>(isEnemyNear, world.getWizards(), world.getBuildings(), world.getMinions());
+	std::sort(nearEnemies.begin(), nearEnemies.end(), sortByDistance);
+
+	bool hasWizards = std::find_if(nearEnemies.begin(), nearEnemies.end(), [](const auto* u) {return MyStrategy::getWizard(u) != nullptr; }) != nearEnemies.end();
+	bool hasDart    = std::find_if(nearEnemies.begin(), nearEnemies.end(), [](const auto* u) {return MyStrategy::getMinion(u) != nullptr && MyStrategy::getMinion(u)->getType() == model::MINION_FETISH_BLOWDART; }) != nearEnemies.end();
+	
+	const model::Building* nearBuilding = MyStrategy::getBuilding(nearEnemies.front());
+	if (nearBuilding != nullptr && !hasWizards && !hasDart)  // orks are handled by retreat code
+	{
+		// try attack building with a staff
+		Point2D newPosition = Point2D(*nearBuilding) + Point2D(nearBuilding->getRadius(), 0);
+		if (goTo(newPosition, move, true/*no re-aim*/, false/*no path finding*/))
+		{
+			isMoveChanged = true;
+		}
 	}
 
 	return isMoveChanged;

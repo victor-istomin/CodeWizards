@@ -55,7 +55,7 @@ State::State(const MyStrategy* strategy, const model::Wizard& self, const model:
 	// todo: carefully take into account all missiles
 	int burning = std::count_if(statuses.begin(), statuses.end(), [](const model::Status& s) { return s.getType() == model::STATUS_BURNING; });
 	m_estimatedHP -= double(burning * m_game.getBurningSummaryDamage()) / 2.0;
-	m_estimatedHP -= m_dangerousProjectiles.size() * game.getMagicMissileDirectDamage();
+	m_estimatedHP -= double(m_dangerousProjectiles.size()) * game.getMagicMissileDirectDamage();
 
 	m_isLowHP = m_estimatedHP <= std::max<double>(self.getMaxLife() * State::LOW_HP_FACTOR, game.getGuardianTowerDamage());
 }
@@ -353,7 +353,7 @@ void State::updateBonuses()
 		// 				spawn.m_wizardsHp.enemies += wizard.getLife();
 		// 		}
 
-		static const int THROTTLE_FACTOR = 4;
+		const int THROTTLE_FACTOR = (spawn.m_lastCheckTick >= lastBonusSpawnTick() && spawn.m_state == BonusSpawn::NO_BONUS) ? 16 : 4;
 		if ((m_world.getTickIndex() % THROTTLE_FACTOR) == 0)
 		{
 			spawn.m_smoothPathCache.clear();

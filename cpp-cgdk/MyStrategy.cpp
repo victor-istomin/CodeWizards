@@ -73,6 +73,7 @@ void MyStrategy::move(const Wizard& self, const World& world, const Game& game, 
 	initState(self, world, game, move, debugMessage);
 	State::HistoryWriter updater(*m_state, m_oldState);
 	debugMessage.visualizePredictions(m_state->m_enemySpawnPredictions);
+	debugMessage.visualizeWaypoints(g_waypointsMap);
 
 	learnSkill(move);
 
@@ -307,9 +308,11 @@ bool MyStrategy::considerAttack(model::Move& move, bool isRetreating, DebugMessa
 
 	if (!isActionSet && m_state->isReadyForAction(ActionType::ACTION_STAFF))
 	{
-		if (distance < game.getStaffRange() + nearestTarget->getRadius())
+		if (distance < game.getStaffRange() + nearestTarget->getRadius() 
+			&& std::abs(angle) < game.getStaffSector() / 2.0)
 		{
 			move.setAction(ActionType::ACTION_STAFF);
+			isActionSet = true;
 		}
 	}
 
@@ -464,8 +467,11 @@ void MyStrategy::initialSetup()
 	{ 
 		Point2D(100.0, mapSize - 100.0),
 		Point2D(800.0, mapSize - 800.0),
+		Point2D(1200.0, 2400.0),
 		MID_GUARD_POINT,
 		Point2D(2400.0, 1500.0),
+		Point2D(mapSize - 1000.0, 1000.0),
+		Point2D(mapSize - 500.0, 500.0),
 		Point2D(mapSize - 100.0, 100.0),
 	};
 
@@ -475,7 +481,10 @@ void MyStrategy::initialSetup()
 		Point2D(100.0, mapSize - 100.0),
 		Point2D(300.0, mapSize - 1200.0),
 		TOP_GUARD_POINT,
-		Point2D(1200, 100.0),
+		Point2D(300.0, 800),
+		Point2D(1200, 300.0),
+		Point2D(mapSize - 1400, 100.0),
+		Point2D(mapSize - 500,  100.0),
 		Point2D(mapSize - 100.0, 100.0)
 	};
 
@@ -483,9 +492,13 @@ void MyStrategy::initialSetup()
 	g_waypointsMap[LaneType::LANE_BOTTOM] = TWaypoints
 	{
 		Point2D(100.0, mapSize - 100.0),
+		Point2D(800.0, mapSize - 100.0),
 		Point2D(1400.0, mapSize - 100.0),
 		BOTTOM_GUARD_POINT,
-		Point2D(mapSize - 200.0, mapSize * 0.5),
+		Point2D(3000, mapSize - 300),
+		Point2D(mapSize - 100.0, mapSize - 800),
+		Point2D(mapSize - 300.0, mapSize * 0.4),
+		Point2D(mapSize - 100.0, 700.0),
 		Point2D(mapSize - 100.0, 100.0)
 	};
 
@@ -671,6 +684,7 @@ const model::LivingUnit* MyStrategy::getNearestTarget()
 const BonusSpawn* MyStrategy::getReasonableBonus()
 {
 	const double MAX_TRAVEL_DISTANCE = m_state->m_game.getWizardVisionRange() * 3 + BonusSpawn::DANGER_HANDICAP;
+	const double MAX_DIRECT_DISTANCE = 1500; // 2.5 "cells" by diagonal
 
 	const model::Wizard& self = m_state->m_self;
 	const int thisTick = m_state->m_world.getTickIndex();
@@ -682,7 +696,7 @@ const BonusSpawn* MyStrategy::getReasonableBonus()
 
 	for (BonusSpawn& spawn : m_state->m_bonuses)
 	{
-		if (spawn.m_point.getDistanceTo(self) > MAX_TRAVEL_DISTANCE)
+		if (spawn.m_point.getDistanceTo(self) > MAX_DIRECT_DISTANCE)
 			continue;  // path can't be shorter than straight line
 
 		if (spawn.m_smoothPathCache.empty())
